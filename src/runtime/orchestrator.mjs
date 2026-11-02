@@ -965,32 +965,48 @@ async function ensureOneBotWindows({ paths, env, log, ok, warn, err, platform })
   const self = http.self ?? {};
   ok(`OneBot HTTP 可用（token 来源：${http.source}），QQ 账号：${self.nickname ?? '?'}（${self.user_id ?? '?'}）`);
 
-  const wsCandidates = [...new Set([env.SNOWLUMA_WS_TOKEN, sl.wsAccessToken, http.wsToken, sl.accessToken, http.token, ''].filter((t) => t !== undefined && t !== null))];
+  // 候选顺序：用户显式给的 → 与可用 HTTP token 同一文件里的 WS token → 其它 SnowLuma 目录里同账号的 →
+  // config.json 里存过的（可能是旧安装的，放后面）→ 兜底用 HTTP token / 空 token。
+  const wsCandidates = [...new Set([
+    env.SNOWLUMA_WS_TOKEN,
+    ...(http.wsCandidates ?? []).map((w) => w.token),
+    http.wsToken,
+    sl.wsAccessToken,
+    sl.accessToken,
+    http.token,
+    ''
+  ].filter((t) => t !== undefined && t !== null))];
   const wsTarget = http.wsUrl && sl.followDiscoveredEndpoint !== false ? http.wsUrl : wsUrl;
   let wsToken = null;
   for (const token of wsCandidates) {
     if ((await probeOneBotWs(wsTarget, token)).ok) { wsToken = token; break; }
   }
   if (wsToken === null) {
-    err(`OneBot WebSocket（${wsTarget}）拒绝了所有候选 token`);
+    err(`OneBot WebSocket（${wsTarget}）拒绝了所有候选 token（试了 ${wsCandidates.length} 个）`);
     err('  解决：把 SnowLuma 网络配置里 WebSocket 服务端的 token 填进 config.json 的 snowluma.wsAccessToken');
     return null;
   }
   ok(`OneBot WebSocket 可用（${wsTarget}）`);
 
-  const homeDir = homes.find((h) => readOneBotTokensSafe(h.dir))?.dir ?? homes[0]?.dir ?? '';
+  // homeDir 用「token 真的能用」的那份 SnowLuma；桥接换账号自愈时会先读它。
+  const homeDir = http.homeDir || homes.find((h) => readOneBotTokensSafe(h.dir))?.dir || homes[0]?.dir || '';
+  const stale = homes.filter((h) => homeDir && path.resolve(h.dir).toLowerCase() !== path.resolve(homeDir).toLowerCase());
+  if (stale.length) {
+    warn(`机器上还有别的 SnowLuma 目录（${stale.map((h) => h.dir).join('、')}），当前用的是 ${homeDir}；旧的不用了可以删掉`);
+  }
   const write = persistSnowLumaEndpoint(cfgFile, {
     accessToken: http.token,
     wsAccessToken: wsToken,
     wsUrl: wsTarget,
     httpUrl: http.baseUrl
   });
-  if (homeDir && !sl.homeDir) {
+  const homeChanged = Boolean(homeDir) && String(sl.homeDir ?? '') !== homeDir;
+  if (homeChanged) {
     const next = readJson(cfgFile);
     next.snowluma = { ...(next.snowluma ?? {}), homeDir };
     writeJson(cfgFile, next);
   }
-  if (write.updated || (homeDir && !sl.homeDir)) ok('已把可用的 OneBot 地址 / token 写回 config.json');
+  if (write.updated || homeChanged) ok('已把可用的 OneBot 地址 / token 写回 config.json');
   return { self, homeDir };
 }
 
