@@ -328,8 +328,13 @@ await test('update：状态 / due / by 的校验与清除', async () => {
     const cleared = lm.update({ userId: OWNER, itemId: made.id, due: '', by: '', viewerKey: KEY });
     assert.equal(cleared.due, undefined);
     assert.equal(cleared.by, undefined);
+    // 「下周三」相对今天换算：期望值同样按调用前后的本地日期算（跨午夜时两者之一成立），
+    // 不能写死日期——写死的 '2026-11-04' 只在 10-28 ~ 11-03 这一周成立，之后 CI 就红了。
+    const before = new Date();
     const set = lm.update({ userId: OWNER, itemId: made.id, due: '下周三', by: 'them', viewerKey: KEY });
-    assert.equal(set.due, '2026-11-04');
+    const after = new Date();
+    const wantDue = new Set([normalizeDueDate('下周三', before), normalizeDueDate('下周三', after)]);
+    assert.ok(wantDue.has(set.due), `下周三应换算成 ${[...wantDue].join(' / ')}（得到 ${set.due}）`);
     assert.equal(set.by, 'them');
 
     // 非约定不能有状态 / 到期日

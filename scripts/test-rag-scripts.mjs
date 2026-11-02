@@ -138,6 +138,11 @@ function makeHome({ name, units = true, settingsKind = 'bundled', provider = 'lo
   fs.copyFileSync(path.join(REPO, 'scripts', 'start-all.mjs'), path.join(bridge, 'scripts', 'start-all.mjs'));
   fs.copyFileSync(path.join(REPO, 'scripts', 'stop-all.mjs'), path.join(bridge, 'scripts', 'stop-all.mjs'));
   fs.cpSync(path.join(REPO, 'src', 'runtime'), path.join(bridge, 'src', 'runtime'), { recursive: true });
+  // 编排器的 Windows 路径（DSH 端点发现、SnowLuma token 探测）从 src/ 顶层导入这几个模块；
+  // ESM 静态导入在 Linux 上也会解析，夹具里缺了就是 ERR_MODULE_NOT_FOUND。
+  for (const file of ['dsh-discovery.js', 'dsh-client.js', 'snowluma-conn.js']) {
+    fs.copyFileSync(path.join(REPO, 'src', file), path.join(bridge, 'src', file));
+  }
   // js-yaml 等依赖：让 Node 从仓库 node_modules 解析（只读链接）。
   fs.symlinkSync(path.join(REPO, 'node_modules'), path.join(bridge, 'node_modules'), 'dir');
   fs.copyFileSync(path.join(REPO, 'scripts', 'rag-config.py'), path.join(bridge, 'scripts', 'rag-config.py'));
