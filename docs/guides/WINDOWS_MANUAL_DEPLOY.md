@@ -30,13 +30,14 @@ QQ 客户端 ← SnowLuma(注入)   OneBot HTTP 3000 / WS 3001
                                    ↕
                           qq-bridge  src\bridge.js   控制台 3100
                                    ↕
-                          DSH  dsh web               3080
+                          DSH  dsh web 3080 或 桌面版（随机端口）
                           ↓
                           AI 模型 → 回复 → QQ
 ```
 
-桥接只认 **3080** 上的 DSH。**DSH 桌面版 GUI 不是这个**——它的 API 端口每次启动都随机，
-只开 GUI 会出现控制台 `dshReady: false`、日志「DSH 事件流已结束（本次收到 0 帧）」。
+DSH 用 `dsh web`（固定 3080）或**桌面版**（端口每次随机）都行：桥接启动时先试 `config.json` 的 `dsh.baseUrl`，
+连不上就按进程找到桌面版的端口（`src/dsh-discovery.js`），运行中 DSH 重启换了端口也会自动重连。
+下面第 5 步以 `dsh web` 为例；用桌面版就把第 5 步换成「打开桌面版」。
 
 > 机器上已经有一套服务在跑（比如之前用过 `start-all.bat`）时，先收掉：
 >
@@ -138,10 +139,8 @@ node -e "import('./src/dsh-client.js').then(async m=>{const a=new m.NodeApiClien
 
 ## 4. 把 preset / MCP 装进 DSH
 
-> ⚠️ **DSH 第一次装、`%USERPROFILE%\.dsh\profiles\web` 还不存在时**，先做第 5 步起一次
-> `dsh web --no-open`（3080 起来后 Ctrl+C），再回来执行本节。否则 setup-dsh 会自建一个
-> 缺 base bundle 的 profile，DSH 从此起不来（pending / waiting for service 后退出）。
-> 已经在用的 profile 不受影响。
+> profile 还不存在也可以直接跑：setup-dsh 会按 DSH 自带模板新建（带 `@deepseek-ai/dsh-base` / `dsh-web-app`）。
+> 不带参数时同时装进 `web`（dsh web 用）和 `desktop`（桌面版用）两个 profile。**装完要重启 DSH 才生效。**
 
 ```bat
 node scripts\setup-dsh.mjs
@@ -318,8 +317,8 @@ QQ 里收到回复即成功。运行记录在 `state/long-memory/archive/private
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 控制台 `dshReady:false`，3080 端口没监听 | 只开了 DSH **桌面版 GUI**，它 API 在随机端口 | 改用 `dsh web --no-open`；GUI 可以和它同时开 |
-| `session/model-unavailable` | `config.json` 的 provider 不在当前 DSH 模型目录 | 用第 3 步的命令查 `default`，把 `provider` / `model` 改成查到的值 |
+| 控制台 `dshReady:false` | DSH 没开，或桌面版是用另一个 `DSH_HOME` 启动的 | 打开桌面版或 `dsh web --no-open`；看 `bridge.log` 里的 `DSH 端点：` 一行 |
+| `session/model-unavailable` | DSH 里没有可用模型（没登录账号 / 没填 API Key），或 provider 写死了别的值 | 在 DSH「设置 → 模型」登录账号或填 Key；`dsh.provider` 用 `"auto"` 跟随 DSH |
 | SnowLuma 日志没有 `login detected`，OneBot 3000/3001 不起 | 没开 `SNOWLUMA_HOOK_AUTOLOAD=1`，QQ 比 SnowLuma 晚起 | 关掉 SnowLuma，重设环境变量再起 |
 | 桥接 `code=1006` 一直重连 | WS token 与 `config.json` 不一致 | 新版会自愈并写回；不行就检查 `homeDir` 是否指向真的 SnowLuma 目录 |
 | 启动直接说「缺少配置文件」 | 没 `copy config.example.json config.json` | 复制并填 `ownerQQ` / `allow.private` |
@@ -335,7 +334,7 @@ QQ 里收到回复即成功。运行记录在 `state/long-memory/archive/private
 - [ ] `node -v` ≥ 22.13（推荐 24）
 - [ ] `npm ci` 成功，`config.json` 存在且 `ownerQQ` / `allow.private` 正确
 - [ ] `node scripts\setup-dsh.mjs` 输出 `plugin ... install: OK`，之后重启过 DSH
-- [ ] 3080 上的 `dsh web` 在跑（不是桌面 GUI）
+- [ ] DSH 在跑（3080 上的 `dsh web` 或桌面版），`bridge.log` 有 `DSH 端点：…`
 - [ ] SnowLuma 日志有 `hook auto-load enabled` + `login detected` + 3000/3001 listening
 - [ ] 桥接日志有 `SnowLuma 已连接` + `DSH 已就绪`
 - [ ] `/api/status` 四项全 true

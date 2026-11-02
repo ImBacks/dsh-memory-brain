@@ -16,6 +16,7 @@ import { GEN1_ROLE_LINE_RE, parseRoleSections, roleCharStats, roleSectionReport,
 import { fileURLToPath } from 'node:url';
 import { SnowLumaWebSocketClient, text } from '@snowluma/sdk';
 import { NodeApiClient, unwrap, createTurnCollector, discoverDshLaunchToken } from './dsh-client.js';
+import { describeEndpoint, modelSetupHint, resolveDshEndpoint } from './dsh-discovery.js';
 import { mdToPlain, splitForQQ, truncateText, truncateTextTail } from './md-to-plain.js';
 import { SENSITIVE_RE } from './sensitive.js';
 import { looksLikeUnfinished } from './v2-wait.js';
@@ -710,7 +711,11 @@ function loadConfig() {
   const cfg = {
     dsh: {
       baseUrl: 'http://127.0.0.1:3080',
-      provider: 'deepseek-official',
+      // 连哪个 DSH：auto（默认，baseUrl 能连就用 dsh web，否则自动找桌面版）| web | desktop。
+      // 桌面版端口每次随机，由 src/dsh-discovery.js 按进程发现。
+      target: 'auto',
+      // auto：跟随当前 DSH 的默认模型（dsh web 常见 deepseek-official，桌面版常见 deepseek-account）。
+      provider: 'auto',
       // 多模态模型：DeepSeek-V41-Flash（DSH 模型目录里 inputModalities 含 image）。
       // 旧默认 deepseek-v4-flash-vision-exp 已被取代；config.json 未配置时用此兜底。
       model: 'deepseek-flash',
@@ -1917,8 +1922,11 @@ async function main() {
   // 各模块（人格 / TTS / DSH 凭据 / RAG）都已就绪后再建；创建失败只告警，桥接照常启动，
   // 新接口回 503。密钥规则、脱敏、合并都由 api-hub 负责，桥接这里只做路由。
   let apiHub = null;
+  // api（DSH 客户端）在后面才建，这里先放一个可变的地址，建好 / 端点切换时更新。
+  const dshLive = { url: String(cfg.dsh?.baseUrl || 'http://127.0.0.1:3080') };
   try {
     apiHub = createApiHub({
+      getDshUrl: () => dshLive.url,
       root: ROOT,
       stateDir: STATE_DIR,
       getPersonaConsole: () => persona?.console ?? null,
@@ -2888,8 +2896,19 @@ async function main() {
     log('ℹ️  socialV2.voice.allowAbsolutePath=true 已不再放宽 AI 通道：AI 发的语音始终只允许来自语音库（库外文件请用语音工具/CLI 发送）');
   }
 
-  // DSH 侧
-  const api = new NodeApiClient(cfg.dsh.baseUrl, undefined, {
+  // DSH 侧：先发现端点（dsh web 固定端口 / 桌面版随机端口），见 src/dsh-discovery.js。
+  const dshTarget = String(process.env.QQ_BRIDGE_DSH_TARGET || cfg.dsh.target || 'auto').trim().toLowerCase();
+  const dshWebUrl = String(cfg.dsh.baseUrl || 'http://127.0.0.1:3080');
+  let dshEndpoint = await resolveDshEndpoint({ baseUrl: dshWebUrl, target: dshTarget }).catch(() => null);
+  if (dshEndpoint) {
+    log(`DSH 端点：${describeEndpoint(dshEndpoint)}`);
+    if (dshEndpoint.homeMismatch) {
+      log(`⚠️ 桌面版用的 DSH 数据目录是 ${dshEndpoint.dshHome}，与本进程不同；鉴权可能失败，请让 DSH_HOME 指向同一目录`);
+    }
+  } else {
+    log(`暂未找到可用的 DSH（target=${dshTarget}）：请打开 DSH 桌面版或运行 dsh web；起来后会自动发现`);
+  }
+  const api = new NodeApiClient(dshEndpoint?.baseUrl ?? dshWebUrl, undefined, {
     token: cfg.dsh.authToken,
     // true=用户在 config.json 里显式填的；false=从日志猜的。猜来的不优先于离线铸造。
     tokenExplicit: cfg.dsh.authTokenExplicit === true,
@@ -2904,6 +2923,7 @@ async function main() {
   // 调用会抛 “api.sessions.modelCatalog is not a function”，让思考强度档位静默退回内置清单。
   // 这里直接用桥接自己覆写的 callUnary（它本来就是为「不依赖旧版客户端域方法」而存在的），
   // 并保留一次 `session/models` 回落以兼容更老的 DSH。
+  dshLive.url = api.baseUrl;
   const modelCatalogErrorLogged = new Set();
   async function fetchModelCatalog() {
     try {
@@ -3410,12 +3430,35 @@ async function main() {
       }
     }
   };
+  // DSH 不可达时重新发现一次端点（桌面版重启后端口会变）；10 秒节流，PowerShell 查询约 1~2 秒。
+  let lastDshDiscoveryAt = 0;
+  async function rediscoverDsh() {
+    if (Date.now() - lastDshDiscoveryAt < 10000) return false;
+    lastDshDiscoveryAt = Date.now();
+    const found = await resolveDshEndpoint({ baseUrl: dshWebUrl, target: dshTarget }).catch(() => null);
+    if (!found || found.baseUrl === api.baseUrl) return false;
+    api.setBaseUrl(found.baseUrl);
+    dshLive.url = found.baseUrl;
+    dshEndpoint = found;
+    // 换了一个 DSH（dsh web ↔ 桌面版）：模型目录不同，会话模型要重新选，提示也要重新给。
+    modelSelectionEpoch += 1;
+    resetModelCatalogCache();
+    noModelHintLogged = false;
+    log(`DSH 端点已切换：${describeEndpoint(found)}`);
+    return true;
+  }
   const checkDsh = async () => {
     let ok = false;
     try {
       await api.settings.describe({});
       ok = true;
     } catch {}
+    if (!ok && await rediscoverDsh()) {
+      try {
+        await api.settings.describe({});
+        ok = true;
+      } catch {}
+    }
     if (ok) {
       await refreshMode();
       // DSH 起来后拉一次 preset 清单；DSH 重启（dshReady 由 false 变 true）时再拉一次。
@@ -4466,6 +4509,7 @@ async function main() {
             role: rs.role ?? null,
             roleMode: rs.mode ?? 'active',
             dshReady,
+            dsh: { baseUrl: api.baseUrl, kind: dshEndpoint?.kind ?? null, target: dshTarget },
             ownerQQ: cfg.ownerQQ ?? null,
             allowGroups: cfg.allow?.groups ?? [],
             allowPrivate: cfg.allow?.private ?? [],
@@ -5106,8 +5150,7 @@ async function main() {
 
         // ── DSH 模型与思考强度 ───────────────────────────────────────────────
         if (req.method === 'GET' && url.pathname === '/api/dsh/model') {
-          const provider = String(cfg.dsh?.provider || 'deepseek-official');
-          const model = String(cfg.dsh?.model || 'deepseek-flash');
+          const { provider, model } = await preferredChatModel();
           // 档位优先取 DSH 实际公布的能力（DSH 换档位词汇或换 provider 时自动跟随），失败退回内置白名单。
           let options = REASONING_EFFORT_OPTIONS.slice();
           let labels = {};
@@ -9312,17 +9355,29 @@ async function main() {
   // 桌面版 DSH（Electron）实测只有 deepseek-account。config.json 里写的是前者时，
   // selectModel 会一直报 model-unavailable。这里缓存一次目录默认值，失败后临时回退，
   // 并明确提示用户改 config.json（不自动改用户配置）。
+  // 缓存只留 60 秒，且 DSH 端点切换 / 恢复时作废：dsh web 与桌面版的目录不同
+  // （deepseek-official vs deepseek-account），用户也可能刚登录账号 / 填了 API Key。
   let catalogDefaultModelCache; // undefined=未查；null=查不到
+  let catalogDefaultModelAt = 0;
+  let catalogRoutableProviders = null; // null=未知；[]=DSH 里一个可用模型都没有
+  function resetModelCatalogCache() {
+    catalogDefaultModelCache = undefined;
+    catalogRoutableProviders = null;
+  }
   async function catalogDefaultModel() {
-    if (catalogDefaultModelCache !== undefined) return catalogDefaultModelCache;
+    if (catalogDefaultModelCache !== undefined && Date.now() - catalogDefaultModelAt < 60000) return catalogDefaultModelCache;
+    catalogDefaultModelAt = Date.now();
     try {
       const catalog = unwrap(await fetchModelCatalog(), 'session.modelCatalog');
+      const routable = Array.isArray(catalog?.routableProviders) ? catalog.routableProviders.map(String) : null;
+      catalogRoutableProviders = routable;
       const fallback = catalog?.default;
+      const usable = (provider) => !routable || routable.includes(provider);
       if (fallback && typeof fallback.provider === 'string' && typeof fallback.model === 'string'
-        && fallback.provider && fallback.model) {
+        && fallback.provider && fallback.model && usable(fallback.provider)) {
         catalogDefaultModelCache = { provider: fallback.provider, model: fallback.model };
       } else {
-        const group = (Array.isArray(catalog?.groups) ? catalog.groups : []).find((item) => item?.models?.length);
+        const group = (Array.isArray(catalog?.groups) ? catalog.groups : []).find((item) => item?.models?.length && usable(String(item.id)));
         const first = group?.models?.[0];
         catalogDefaultModelCache = group?.id && first?.id ? { provider: String(group.id), model: String(first.id) } : null;
       }
@@ -9333,13 +9388,31 @@ async function main() {
     return catalogDefaultModelCache;
   }
 
+  // 会话想用的模型。dsh.provider 留空或写 "auto"（默认）时跟随当前 DSH 的默认模型：
+  // dsh web 一般是 deepseek-official，桌面版一般是 deepseek-account，换版本不用改 config.json。
+  async function preferredChatModel() {
+    const configured = String(cfg.dsh?.provider ?? '').trim();
+    const configuredModel = String(cfg.dsh?.model ?? '').trim();
+    if (configured && configured.toLowerCase() !== 'auto') {
+      return { provider: configured, model: configuredModel && configuredModel.toLowerCase() !== 'auto' ? configuredModel : 'deepseek-flash', auto: false };
+    }
+    const fallback = await catalogDefaultModel();
+    return {
+      provider: fallback?.provider ?? 'deepseek-official',
+      model: configuredModel && configuredModel.toLowerCase() !== 'auto' ? configuredModel : (fallback?.model ?? 'deepseek-flash'),
+      auto: true
+    };
+  }
+
   // 返回 'applied' | 'not-found' | 'failed'。
   // 'not-found' 表示 DSH 侧会话已经不存在（DSH 重启、异常退出、归档竞态），
   // 本地映射已失效，调用方必须退役重建，否则每条消息都会对着一个不存在的会话重试。
+  let noModelHintLogged = false;
   async function ensureChatModel(sessionId) {
     if (modelAppliedSessions.get(sessionId) === modelSelectionEpoch) return 'applied';
-    let provider = String(cfg.dsh?.provider || 'deepseek-official');
-    let model = String(cfg.dsh?.model || 'deepseek-flash');
+    const preferred = await preferredChatModel();
+    let provider = preferred.provider;
+    let model = preferred.model;
     const effort = String(cfg.dsh?.reasoningEffort || REASONING_EFFORT_DEFAULT);
     let lastError = null;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -9353,8 +9426,15 @@ async function main() {
         log(`设置会话模型失败 ${sessionId}（第 ${attempt}/2 次）: ${error?.message ?? error}`);
         if (attempt === 1 && /model[- ]?unavailable|select an available model/i.test(String(error?.message ?? error))) {
           const fallback = await catalogDefaultModel();
+          if ((!fallback || (Array.isArray(catalogRoutableProviders) && catalogRoutableProviders.length === 0)) && !noModelHintLogged) {
+            // 全新安装的 DSH 模型目录是空的：不是配置写错，而是还没登录账号 / 填 API Key。
+            noModelHintLogged = true;
+            log(`⚠️ DSH 里还没有可用的模型，QQ 消息都会失败。请${modelSetupHint(dshEndpoint ?? { baseUrl: api.baseUrl })}`);
+          }
           if (fallback && (fallback.provider !== provider || fallback.model !== model)) {
-            log(`config.json 的 DSH 模型 ${provider}/${model} 不在当前 DSH 目录中；本次临时改用 ${fallback.provider}/${fallback.model}。建议把 config.json 的 dsh.provider / dsh.model 改成这一组`);
+            log(preferred.auto
+              ? `DSH 默认模型 ${provider}/${model} 暂不可用；本次改用 ${fallback.provider}/${fallback.model}`
+              : `config.json 的 DSH 模型 ${provider}/${model} 不在当前 DSH 目录中；本次临时改用 ${fallback.provider}/${fallback.model}。建议把 config.json 的 dsh.provider 改成 "auto"（跟随 DSH）或这一组`);
             provider = fallback.provider;
             model = fallback.model;
           }
@@ -13600,7 +13680,8 @@ async function main() {
   // QQ 侧（SnowLuma OneBot WebSocket 客户端）
   const bot = new SnowLumaWebSocketClient({
     url: cfg.snowluma.wsUrl,
-    accessToken: cfg.snowluma.accessToken || undefined,
+    // WS 与 HTTP 的 token 在 SnowLuma 里是两个值；wsAccessToken 单独给 WebSocket 用（start-all 会自动探测写入）。
+    accessToken: cfg.snowluma.wsAccessToken || cfg.snowluma.accessToken || undefined,
     reconnect: true
   });
 
@@ -13740,6 +13821,8 @@ async function main() {
     try {
       const w = persistSnowLumaEndpoint(path.join(ROOT, 'config.json'), {
         accessToken: httpToken,
+        // WS token 与 HTTP token 不同：一起写回，下次启动 WebSocket 第一次就能连上。
+        ...(r.wsToken ? { wsAccessToken: r.wsToken } : {}),
         ...(followEndpoint ? { wsUrl, httpUrl: r.baseUrl } : {})
       });
       if (w.updated) log(`   已写回 config.json：${Object.keys(w.changed).join(' / ')}`);
@@ -13800,7 +13883,8 @@ async function main() {
     // 于是挂在 close 上的 token 自愈永远不会触发 —— 表现为「桥接活着但收发全废」，
     // 用户只能靠手工改 token 绕过去（issue #19）。这里同样尝试一次（内部有 10s 节流）。
     const detail = error && typeof error === 'object'
-      ? [error.code, error.message, error.reason, error.type].filter(Boolean).join(' | ') || JSON.stringify(error)
+      ? [error.code, error.message, error.reason, error.type, error.error?.message, error.cause?.message].filter(Boolean).join(' | ')
+        || (JSON.stringify(error) === '{}' ? '' : JSON.stringify(error))
       : String(error ?? '');
     log(`SnowLuma 错误：${detail || '(无详情)'}`);
     void healTokenIfStale(`error ${detail}`.trim().slice(0, 200));

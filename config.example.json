@@ -1,7 +1,8 @@
 {
   "dsh": {
     "baseUrl": "http://127.0.0.1:3080",
-    "provider": "deepseek-official",
+    "target": "auto",
+    "provider": "auto",
     "model": "deepseek-flash",
     "reasoningEffort": "max",
     "authToken": "",

@@ -326,6 +326,20 @@ export class NodeApiClient extends AbstractApiClient {
     return this.baseUrl;
   }
 
+  /**
+   * 切换到另一个 DSH 地址（桌面版重启后端口会变）。
+   * Cookie 名与签名载荷都绑定 authority，所以换地址必须作废旧 Cookie；
+   * 期望 follow 的会话集合保留，新流连上后照常重放。
+   * @returns 地址是否真的变了。
+   */
+  setBaseUrl(baseUrl) {
+    const next = String(baseUrl ?? '').replace(/\/+$/, '');
+    if (!next || next === this.baseUrl) return false;
+    this.baseUrl = next;
+    this.invalidateAuth();
+    return true;
+  }
+
   /** 使当前 Cookie/launch token 失效；DSH 重启或 401 后会自动重新发现最新 token。 */
   invalidateAuth() {
     this._authEpoch += 1;

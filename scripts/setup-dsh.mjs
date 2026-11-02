@@ -10,9 +10,15 @@
 //   3. 在 profile package.json 中注册两个 bundle：qq-mode-console、qq-agent-presets
 //
 // 用法：
-//   node scripts/setup-dsh.mjs [profile]
+//   node scripts/setup-dsh.mjs            # 装进 web（dsh web）和 desktop（DSH 桌面版）两个 profile
+//   node scripts/setup-dsh.mjs web        # 只装指定 profile（可写多个）
 //
-// 默认 profile 为 web；可用环境变量 DSH_HOME 指定 DSH 根目录。
+// 桌面版固定使用 profiles/desktop，`dsh web` 默认使用 profiles/web；两边各有一份
+// package.json / cordis.patch.yml，必须分别安装，否则换一个版本打开就没有 QQ 预设和 MCP。
+// 不带参数时：web 总是装；desktop 在「已装桌面版或 profiles/desktop 已存在」时装。
+// 可用环境变量 DSH_HOME 指定 DSH 根目录。
+//
+// 最后一行输出 `[setup-dsh] RESULT changed=<0|1> profiles=<…>`，供 start-all 判断是否需要重启 DSH。
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -27,12 +33,37 @@ import { findDshCli } from '../src/runtime/paths.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const DSH_HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh');
-const PROFILE = process.argv[2] || 'web';
+
+// DSH 自带的 profile 模板（dsh-app-boot 的 PROFILE_TEMPLATES；桌面版也用 web 模板初始化 desktop）。
+// profile 还不存在时必须带上它们，否则新建出来的 package.json 只有本项目的两个 bundle，
+// DSH 会卡在「waiting for service: tools / settings / agentPresets」然后退出。
+const BASE_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'];
+
+/** 桌面版是否装在这台机器上（dsh CLI 是桌面版的 Electron 垫片）。 */
+function desktopInstalled() {
+  const cli = findDshCli({ env: process.env });
+  if (!cli) return false;
+  try { return /ELECTRON_RUN_AS_NODE/i.test(fs.readFileSync(cli, 'utf8')); } catch { return false; }
+}
+
+function defaultProfiles() {
+  const out = ['web'];
+  if (fs.existsSync(path.join(DSH_HOME, 'profiles', 'desktop')) || desktopInstalled()) out.push('desktop');
+  return out;
+}
+
+const PROFILES = process.argv.length > 2 ? [...new Set(process.argv.slice(2))] : defaultProfiles();
+// 当前正在安装的 profile；下面的函数沿用原来的全局写法，由主循环逐个赋值。
+let PROFILE = PROFILES[0];
+// 本次是否改动了任何 DSH 侧文件（改了就要重启 DSH 才生效）。
+let CHANGED = false;
 
 // A profile is a directory name, never a path (same boundary as DSH itself).
-if (PROFILE === '.' || PROFILE === '..' || PROFILE === 'node_modules'
-    || /[\\/\x00-\x1f<>:"|?*]/.test(PROFILE) || /[. ]$/.test(PROFILE)) {
-  fatal(`invalid profile name: ${JSON.stringify(PROFILE)}`);
+for (const name of PROFILES) {
+  if (name === '.' || name === '..' || name === 'node_modules'
+      || /[\\/\x00-\x1f<>:"|?*]/.test(name) || /[. ]$/.test(name)) {
+    fatal(`invalid profile name: ${JSON.stringify(name)}`);
+  }
 }
 
 function log(msg) {
@@ -92,6 +123,7 @@ const BUNDLE_NAMES = ['qq-mode-console', 'qq-agent-presets'];
 function regeneratePresetPatches() {
   const results = buildPatches({ log: () => {} });
   for (const { file, changed } of results) {
+    if (changed) CHANGED = true;
     log(`preset patch ${changed ? '已生成' : '已是最新'}: ${path.relative(REPO_ROOT, file)}`);
   }
   for (const name of PRESETS) {
@@ -206,7 +238,16 @@ function prepareCordisPatch() {
     if (entries.length || Object.keys(operation).length > 1) kept.push({ ...operation, insert: entries });
   }
   const text = (kept.length ? `${yaml.dump(kept, { lineWidth: -1, noRefs: true })}\n` : '') + mcpEntries();
-  return { patchFile, original, text, removed };
+  // 三个托管 MCP 条目已经和要写的一模一样时**不动文件**：DSH 自己（尤其桌面版）会往这个
+  // 文件末尾追加设置项，按文本比较会把「只是顺序 / 引号不同」误判成改动，既白白重写用户文件，
+  // 又让 start-all 以为必须重启 DSH。
+  const managedNow = [];
+  for (const operation of doc) {
+    for (const entry of operation.insert ?? []) if (MANAGED_MCP_IDS.includes(entry?.id)) managedNow.push(entry);
+  }
+  const wanted = yaml.load(mcpEntries()).flatMap((operation) => operation.insert);
+  const unchanged = JSON.stringify(managedNow) === JSON.stringify(wanted);
+  return { patchFile, original, text: unchanged ? original : text, removed };
 }
 
 function patchCordis({ patchFile, original, text, removed }) {
@@ -215,6 +256,11 @@ function patchCordis({ patchFile, original, text, removed }) {
   if (original && original !== text) {
     backupBeforeOverwrite(patchFile);
   }
+  if (original === text) {
+    log(`cordis.patch.yml: MCP 条目已是最新（${PROFILE}）`);
+    return;
+  }
+  CHANGED = true;
   const temporary = `${patchFile}.${process.pid}.tmp`;
   try {
     fs.writeFileSync(temporary, text, 'utf8');
@@ -262,6 +308,7 @@ function ensureDirLink(linkPath, targetDir, label) {
     fs.rmSync(linkPath, { recursive: true, force: true });
   }
 
+  CHANGED = true;
   try {
     if (process.platform === 'win32') {
       fs.symlinkSync(targetDir, linkPath, 'junction');
@@ -295,10 +342,13 @@ function patchProfilePackage(links) {
   const profileDir = path.join(DSH_HOME, 'profiles', PROFILE);
   const pkgFile = path.join(profileDir, 'package.json');
   ensureDir(profileDir);
-  let pkg = { name: `dsh-profile-${PROFILE}`, private: true, dependencies: {}, dsh: { profile: { bundles: [] } } };
+  // 新建时按 DSH 自己的模板带上基础 bundle（见 BASE_BUNDLES 的说明）。
+  let pkg = { name: `dsh-profile-${PROFILE}`, private: true, dependencies: {}, dsh: { profile: { bundles: [...BASE_BUNDLES] } } };
+  let originalText = '';
   if (fs.existsSync(pkgFile)) {
     try {
-      pkg = JSON.parse(fs.readFileSync(pkgFile, 'utf8'));
+      originalText = fs.readFileSync(pkgFile, 'utf8');
+      pkg = JSON.parse(originalText.charCodeAt(0) === 0xfeff ? originalText.slice(1) : originalText);
     } catch (e) {
       fatal(`failed to parse ${pkgFile}: ${e.message}`);
     }
@@ -309,6 +359,13 @@ function patchProfilePackage(links) {
   pkg.dsh = pkg.dsh || {};
   pkg.dsh.profile = pkg.dsh.profile || {};
   if (!Array.isArray(pkg.dsh.profile.bundles)) pkg.dsh.profile.bundles = [];
+  // 修复旧版 setup 在「profile 不存在」时留下的残缺清单：只有本项目的 bundle、
+  // 一个 DSH 自带 bundle 都没有（DSH 起不来）。用户自己的第三方 bundle 不在此列，原样保留。
+  const ours = new Set(BUNDLE_NAMES);
+  if (pkg.dsh.profile.bundles.length && pkg.dsh.profile.bundles.every((name) => ours.has(name))) {
+    pkg.dsh.profile.bundles.unshift(...BASE_BUNDLES);
+    log(`package.json 缺少 DSH 基础 bundle，已补上：${BASE_BUNDLES.join(', ')}`);
+  }
   for (const [name, linkDir] of Object.entries(links)) {
     const linkVal = `link:${linkDir.replace(/\\/g, '/')}`;
     if (pkg.dependencies[name] !== linkVal) {
@@ -320,7 +377,11 @@ function patchProfilePackage(links) {
       log(`package.json bundle added: ${name}`);
     }
   }
-  fs.writeFileSync(pkgFile, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
+  const nextText = `${JSON.stringify(pkg, null, 2)}\n`;
+  if (nextText !== originalText) {
+    fs.writeFileSync(pkgFile, nextText, 'utf8');
+    CHANGED = true;
+  }
   log(`profile package.json ensured: ${pkgFile}`);
 }
 
@@ -363,15 +424,17 @@ function autoInstallProfileBundles() {
   const manual = findExecutable(dshName, { env: process.env });
   let command = spec.command;
   let args = spec.args;
-  let spawnEnv = process.env;
+  // 桌面版 dsh.cmd 被解析成「DeepSeek Harness.exe + ELECTRON_RUN_AS_NODE=1」，env 必须带上。
+  let spawnEnv = spec.env ? { ...process.env, ...spec.env } : process.env;
   let verbatim = Boolean(spec.windowsVerbatimArguments);
   if (spec.via === 'cmd-shim') {
     // 走 cmd.exe 时**不能**把 profile 直接拼进命令行：cmd 会对命令行再做一次
     // %VAR% 展开，`test&name%CD%!` 这样的 profile 会被改写甚至执行。改成固定命令行
     // + 环境变量单次展开（/v:off 保留 '!'），profile 已经在上面校验过不含引号。
+    // `/s /c` 会剥掉整行首尾各一个引号，所以整行再包一层，带空格的垫片路径才不会被截断。
     const exe = /\s/.test(spec.resolved) ? `"${spec.resolved}"` : spec.resolved;
     command = process.env.ComSpec || 'cmd.exe';
-    args = ['/d', '/v:off', '/s', '/c', `${exe} plugin --profile "%QQ_BRIDGE_SETUP_PROFILE%" install`];
+    args = ['/d', '/v:off', '/s', '/c', `"${exe} plugin --profile "%QQ_BRIDGE_SETUP_PROFILE%" install"`];
     spawnEnv = { ...process.env, QQ_BRIDGE_SETUP_PROFILE: PROFILE };
     verbatim = true;
   }
@@ -398,15 +461,33 @@ function autoInstallProfileBundles() {
   }
 }
 
-// Validate the existing YAML before changing any presets or configuration.
-const cordisPatch = prepareCordisPatch();
+// Validate every profile's existing YAML before changing any presets or configuration.
+const prepared = PROFILES.map((name) => {
+  PROFILE = name;
+  return { name, cordisPatch: prepareCordisPatch() };
+});
 regeneratePresetPatches();
 reportMcpNode();
-patchCordis(cordisPatch);
-const links = {};
-for (const name of BUNDLE_NAMES) links[name] = ensureBundle(name);
-patchProfilePackage(links);
+const changedProfiles = [];
+for (const { name, cordisPatch } of prepared) {
+  PROFILE = name;
+  log(`── profile: ${name} ──`);
+  const before = CHANGED;
+  CHANGED = false;
+  patchCordis(cordisPatch);
+  const links = {};
+  for (const bundle of BUNDLE_NAMES) links[bundle] = ensureBundle(bundle);
+  patchProfilePackage(links);
+  // 文件都没变且 pnpm 状态已在时不再跑 install（每次都跑要十几秒）。
+  const installed = fs.existsSync(path.join(DSH_HOME, 'profiles', name, 'node_modules', '.modules.yaml'));
+  if (CHANGED || !installed) autoInstallProfileBundles();
+  else log(`dsh plugin --profile ${name} install: 无改动，跳过`);
+  if (CHANGED) changedProfiles.push(name);
+  CHANGED = before || CHANGED;
+}
 reportLegacyPresetDir();
 ensureLocalModeFile();
-autoInstallProfileBundles();
-log('Done. Restart DSH (or reload the profile) so the new presets/MCP take effect.');
+log(CHANGED
+  ? 'Done. Restart DSH (or reload the profile) so the new presets/MCP take effect.'
+  : 'Done. DSH 侧已是最新，无需重启。');
+log(`RESULT changed=${CHANGED ? 1 : 0} profiles=${PROFILES.join(',')} changedProfiles=${changedProfiles.join(',')}`);
