@@ -7,9 +7,11 @@
 //   - Electron 垫片（桌面版 dsh.cmd）直接解析成 exe + 参数，不经 cmd.exe；
 //   - 走 cmd.exe 时整行带引号，含空格的垫片路径不会被截断；
 //   - setup-dsh：profile 不存在时新建带 DSH 基础 bundle；旧版留下的残缺清单被修复；
-//     DSH 往 cordis.patch.yml 末尾追加设置后再跑一次，判定为「无改动」且不重写文件。
+//     DSH 往 cordis.patch.yml 末尾追加设置后再跑一次，判定为「无改动」且不重写文件；
+//   - 机器上有两份 SnowLuma、同一个 QQ 号 token 不同时，WS token 取自 HTTP token 命中的同一文件。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -22,6 +24,7 @@ import {
 } from '../src/dsh-discovery.js';
 import { commandSpec, resolveElectronShim } from '../src/runtime/commands.mjs';
 import { dirsFromProcess } from '../src/runtime/snowluma-locate.mjs';
+import { discoverSnowLumaConnection } from '../src/snowluma-conn.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let failures = 0;
@@ -173,6 +176,43 @@ try {
     fs.writeFileSync(patch, appended);
     assert.equal(runSetup(home, 'web', 'desktop'), '0');
     assert.equal(fs.readFileSync(patch, 'utf8'), appended);
+  });
+
+  await test('两份 SnowLuma、同一 QQ 号：WS token 取自 HTTP token 命中的那份，旧目录的作备选', async () => {
+    // 假 OneBot HTTP：只认「正在运行那份」的 token。端口随机，配置文件里写同一个端口。
+    const server = http.createServer((req, res) => {
+      const ok = req.headers.authorization === 'Bearer http-live';
+      res.writeHead(ok ? 200 : 401, { 'content-type': 'application/json' });
+      res.end(ok ? JSON.stringify({ status: 'ok', retcode: 0, data: { user_id: 123456, nickname: 'bot' } }) : '{}');
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+    const writeHome = (name, httpToken, wsToken) => {
+      const dir = path.join(sandbox, name);
+      fs.mkdirSync(path.join(dir, 'config'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'config', 'onebot_123456.json'), JSON.stringify({
+        networks: {
+          httpServers: [{ accessToken: httpToken, host: '127.0.0.1', port }],
+          wsServers: [{ accessToken: wsToken, host: '127.0.0.1', port: 3001 }]
+        }
+      }));
+      return dir;
+    };
+    try {
+      const live = writeHome('SnowLuma-live', 'http-live', 'ws-live');
+      const old = writeHome('snowluma-old', 'http-old', 'ws-old');
+      // 旧目录排在后面（与真实场景一致：进程发现的在前、常见位置兜底的在后）；两种顺序都要对。
+      for (const homeDirs of [[live, old], [old, live]]) {
+        const r = await discoverSnowLumaConnection({ cfg: {}, baseUrl: `http://127.0.0.1:${port}`, homeDirs, timeoutMs: 3000 });
+        assert.equal(r.ok, true);
+        assert.equal(r.token, 'http-live');
+        assert.equal(r.wsToken, 'ws-live', `顺序 ${homeDirs.map((d) => path.basename(d))} 时 WS token 错了`);
+        assert.deepEqual(r.wsCandidates.map((w) => w.token), ['ws-live', 'ws-old']);
+        assert.equal(path.resolve(r.homeDir), path.resolve(live));
+      }
+    } finally {
+      server.close();
+    }
   });
 } finally {
   fs.rmSync(sandbox, { recursive: true, force: true });
