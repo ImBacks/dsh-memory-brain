@@ -249,6 +249,10 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
     NodeApiClient: class { constructor() { return api; } },
     SnowLumaWebSocketClient: FakeBot, text: (s) => s,
     discoverDshLaunchToken: () => '', unwrap, createTurnCollector,
+    // DSH 端点发现（src/dsh-discovery.js）：测试里固定为 dsh web，不去扫真实进程。
+    resolveDshEndpoint: async ({ baseUrl }) => ({ baseUrl, kind: 'web' }),
+    describeEndpoint: (endpoint) => String(endpoint?.baseUrl ?? ''),
+    modelSetupHint: () => '',
     createOwnLife, createTtsApi, readLargeJsonBody, createLongMemory,
     createLifeLoop,
     createMemoryRagClient, normalizeDateRange, normalizeKeywords,

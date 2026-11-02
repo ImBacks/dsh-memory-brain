@@ -84,11 +84,13 @@ npm start
 
 Or double-click `start.bat` on Windows (guard mode with auto-restart).
 
-> **Windows native (not WSL):** `start.bat` only guards the bridge process. For the full stack use
-> `start-all.bat` / `stop-all.bat` (DSH → QQ → SnowLuma → bridge → optional RAG). Paths can be
-> overridden with environment variables or `config.json`'s `orchestrator` section. Windows uses
-> `%USERPROFILE%\.ai-companion-run\*.pid` instead of systemd. Full steps are in the Chinese
-> README section “Windows 原生部署”.
+> **Windows native (not WSL) is supported.** Both DeepSeek Harness flavours work: the desktop app
+> (random API port, discovered automatically from its process) and `dsh web` (fixed port 3080).
+> Inject QQ with SnowLuma yourself and enable its OneBot HTTP (3000) and WebSocket (3001) servers, then
+> double-click `start-all.bat`: it installs dependencies, creates `config.json`, installs the QQ presets /
+> MCP into both DSH profiles, connects to whichever DSH is running (`--desktop` / `--web` to force one),
+> discovers the SnowLuma tokens and starts the bridge. `start.bat` only guards the bridge process.
+> Step-by-step guide (Chinese): [README.windows.md](README.windows.md).
 
 ## DSH Setup on Another Device
 

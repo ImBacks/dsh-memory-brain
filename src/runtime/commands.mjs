@@ -61,6 +61,33 @@ export function resolveShimScript(shimPath, { fsImpl = fs } = {}) {
   return null;
 }
 
+/**
+ * 解析 Electron 自带 CLI 的 .cmd 垫片（DSH 桌面版的 dsh.cmd）：
+ *
+ *   set "ELECTRON_RUN_AS_NODE=1"
+ *   "%~dp0..\..\..\..\DeepSeek Harness.exe" --expose-internals "%~dp0..\..\..\app.asar\dsh\...\cli.js" %*
+ *
+ * 直接用 exe + 参数数组 + ELECTRON_RUN_AS_NODE=1 启动，完全绕开 cmd.exe：
+ * 装在 Program Files 这类带空格的目录里也不受 cmd 引号规则影响。
+ * 解析不了就返回 null（交给 cmd.exe 兜底）。
+ */
+export function resolveElectronShim(shimPath, { fsImpl = fs } = {}) {
+  let text;
+  try { text = fsImpl.readFileSync(shimPath, 'utf8'); } catch { return null; }
+  if (!/ELECTRON_RUN_AS_NODE\s*=\s*1/i.test(text)) return null;
+  const line = text.split(/\r?\n/).map((l) => l.trim()).find((l) => /%\*\s*$/.test(l) && /\.exe"?\s/i.test(l));
+  if (!line) return null;
+  const tokens = [...line.replace(/%\*\s*$/, '').matchAll(/"([^"]*)"|(\S+)/g)].map((m) => m[1] ?? m[2]);
+  if (!tokens.length) return null;
+  const dir = `${path.win32.dirname(shimPath)}\\`;
+  const expand = (token) => token.replace(/%~dp0/gi, () => dir);
+  const exe = path.win32.resolve(expand(tokens[0]));
+  if (!/\.exe$/i.test(exe) || !isFile(exe, fsImpl)) return null;
+  const args = tokens.slice(1).map((token) => (/%~dp0/i.test(token) ? path.win32.resolve(expand(token)) : token));
+  if (args.some((arg) => arg.includes('%'))) return null;
+  return { command: exe, args, env: { ELECTRON_RUN_AS_NODE: '1' } };
+}
+
 /** cmd.exe 的保守引用：只在有空白/特殊字符时加引号；路径里的 `"` 直接拒绝。 */
 function quoteForCmd(value) {
   const s = String(value);
@@ -72,7 +99,8 @@ function quoteForCmd(value) {
 /**
  * 把「命令 + 参数数组」变成 spawn/execFile 能直接用的形态。
  *
- * @returns {{command:string,args:string[],windowsVerbatimArguments?:boolean,resolved?:string,via?:string}}
+ * 调用方启动时必须把返回的 `env`（若有）合并进子进程环境。
+ * @returns {{command:string,args:string[],env?:object,windowsVerbatimArguments?:boolean,resolved?:string,via?:string}}
  */
 export function commandSpec(command, args = [], {
   env = process.env,
@@ -84,13 +112,19 @@ export function commandSpec(command, args = [], {
   if (!raw) throw new Error('命令为空');
   const resolved = path.isAbsolute(raw) ? raw : (findExecutable(raw, { env, platform, fsImpl }) || raw);
   if (platform === 'win32' && /\.(cmd|bat)$/i.test(resolved)) {
+    const electron = resolveElectronShim(resolved, { fsImpl });
+    if (electron) {
+      return { command: electron.command, args: [...electron.args, ...args], env: electron.env, resolved, via: 'electron-shim' };
+    }
     const shimScript = resolveShimScript(resolved, { fsImpl });
     const node = findExecutable(nodeBin, { env, platform, fsImpl }) || (isFile(nodeBin, fsImpl) ? nodeBin : null);
     if (shimScript && node) {
       return { command: node, args: [shimScript, ...args], resolved, via: 'node-shim' };
     }
     const comspec = env.ComSpec || env.COMSPEC || 'cmd.exe';
-    const line = [resolved, ...args].map(quoteForCmd).join(' ');
+    // `cmd /s /c` 会剥掉整行**首尾**各一个引号：只给参数加引号时，带空格的垫片路径
+    // （"…\Program Files\…\dsh.cmd" web）首尾引号被剥掉后在空格处截断。所以整行再包一层引号。
+    const line = `"${[resolved, ...args].map(quoteForCmd).join(' ')}"`;
     return {
       command: comspec,
       args: ['/d', '/v:off', '/s', '/c', line],

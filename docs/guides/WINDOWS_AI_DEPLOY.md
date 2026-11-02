@@ -18,61 +18,27 @@
 
 ---
 
-## 0.5 ⚠️ 已知缺陷与规避（2026-11-01 审计，本文写作时**尚未修复**）
+## 0.5 已知缺陷的修复状态（2026-11-02 复核）
 
-下面 6 条是 Windows 原生部署审计确认的问题。第 1、2 条会让**全新机器直接起不来**——
-遇到时不要浪费时间怀疑代理 / QQ / 端口，那是代码缺陷。
+2026-11-01 审计记录的 6 条问题，在「模拟全新机器」（独立 `USERPROFILE` / `DSH_HOME`、仓库放在带空格路径、
+PATH 里没有 dsh）下逐条复现后修复：
 
-### 1. 全新机器上 setup-dsh 会把 DSH 弄成起不来（最严重，必现）
+| # | 问题 | 状态 |
+|---|---|---|
+| 1 | 全新机器 setup-dsh 新建的 profile 缺 `@deepseek-ai/dsh-base` / `dsh-web-app`，DSH 起不来 | **已修**：新建时按 DSH 自带模板带上基础 bundle；旧版留下的残缺清单（只有本项目两个 bundle）会被补齐 |
+| 2 | `cmd /s /c` 剥掉首尾引号，含空格的垫片路径被截断 | **已修**：桌面版 `dsh.cmd` 直接解析成 `DeepSeek Harness.exe` + `ELECTRON_RUN_AS_NODE=1`，完全不经 cmd.exe；其它 `.cmd` 走 cmd.exe 时整行再包一层引号 |
+| 3 | SnowLuma `错误：{}` 吞掉真实错误 | **已修**：同时取 `error.error` / `cause` 的 message，空对象不再打印成 `{}` |
+| 4 | 贴纸同步抢在 token 自愈之前 | **已缓解**：`start-all` 启动桥接前就把可用的 HTTP / WS token 写进 config.json，首次同步即可走通 |
+| 5 | setup-dsh 每次都整份重排 `cordis.patch.yml` | **已修**：三个托管 MCP 条目未变时不再改写文件（DSH 桌面版自己会往这个文件末尾追加设置） |
+| 6 | 测试缺口 | **已补**：`scripts/test-windows-adapt.mjs` 覆盖含空格路径、Electron 垫片、缺失 / 残缺 profile、端点发现优先级 |
 
-- 位置：`scripts/setup-dsh.mjs:294` `patchProfilePackage()`。`profiles/web` 不存在时它按默认模板
-  自建 `package.json`，`dsh.profile.bundles` 只写进本项目的 `qq-mode-console` / `qq-agent-presets`，
-  缺 `@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`。
-- 现象：DSH 启动后 `pending (waiting for service: tools / settings / agentPresets)` 然后退出；
-  桥接控制台永远 `dshReady: false`。
-- **规避（必须）**：先让 DSH 自己建 profile —— 跑一次 `dsh web --no-open`（3080 起来后 Ctrl+C），
-  确认 `%USERPROFILE%\.dsh\profiles\web\package.json` 的 `bundles` 里已有
-  `@deepseek-ai/dsh-base` 和 `@deepseek-ai/dsh-web-app`，**再**跑 `node scripts\setup-dsh.mjs`。
-- 本机没踩到是因为 profile 早就存在；测试也从不覆盖「profile 不存在」这个分支。
+本次另外修掉的、只在全新机器上暴露的问题：
 
-### 2. cmd.exe 引号处理错误（垫片路径含空格时 DSH 起不来）
-
-- 位置：`src/runtime/commands.mjs:92-99`（`/d /v:off /s /c` + `quoteForCmd` 只给单个参数加引号），
-  `scripts/setup-dsh.mjs:372-378` 又复制了一份同样的写法。
-- 原因：`cmd /s /c` 会剥掉整行首尾引号。垫片路径含空格时（典型：
-  `%ProgramFiles%\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd`）被截断成 `C:\Program`。
-- 现象：DSH 起不来；`setup-dsh` 里的 `dsh plugin --profile ... install` 也失败。
-- **规避**：把 DSH 装在**不含空格**的路径（例如 `E:\deepseek-harness`），或用 `QQ_BRIDGE_DSH_BIN`
-  指向无空格路径。修复方式已知（整行再包一层引号），本次未改。
-
-### 3. SnowLuma 的 `错误：{}` 把真实错误吞掉
-
-- 位置：`src/bridge.js:13805`。`error` 没有 `code/message/reason/type` 时走
-  `JSON.stringify(error)`，得到 `"{}"`——非空字符串，所以后面的 `|| '(无详情)'` 是死代码。
-- 影响：连不上 SnowLuma 时看不到原始错误，恰恰是最需要诊断的场景。
-  排查时改看 SnowLuma 自己的日志（`%USERPROFILE%\.ai-companion-run\snowluma.log`）。
-
-### 4. 贴纸同步抢在 token 自愈之前
-
-- 启动时 WS 未就绪 → 贴纸同步走 HTTP 兜底，此时 `accessToken` 还是空，必然 unauthorized；
-  自愈成功后也不会重新同步一次。只是日志噪音，不影响聊天。
-
-### 5. 工程结构上的不合适
-
-- `src/bridge.js` 单文件 13875 行，`catch {}` 50 处（`src/tts-api.js` 10 处、`src/voice-core.js` 9 处），
-  错误静默消失，排障只能靠日志猜。
-- `qq-tool-restrict` 每次拉起 agent 都逐个调 `tools.restrict()` 82 次，其中 78 次必然抛错并写诊断文件；
-  真正的失败和预期失败混在同一行日志里（边界本身靠执行期 guard 是对的，实现方式在制造噪声）。
-- `setup-dsh` 会整份重排 `%USERPROFILE%\.dsh\profiles\web\cordis.patch.yml`（丢注释、动全局配置），
-  虽有时间戳备份，仍属高侵入。
-
-### 6. 测试覆盖缺口
-
-- `npm test` 81/81 全过，但上面第 1、2 条都逃过了：测试里造的临时路径不带空格，
-  也从不验证「profile 不存在」的分支。这正是这两个 bug 能活到现在的原因。
-  补测试时至少要有：含空格的 `.cmd` 垫片路径、缺失 profile 时 setup-dsh 的行为。
-
----
+- 刚 clone 还没 `npm ci` 时 `start-all.bat` 直接 `ERR_MODULE_NOT_FOUND`：入口改为只用 Node 内置模块，先自动 `npm ci`。
+- 桥接写死 3080，**桌面版完全连不上**：新增 `src/dsh-discovery.js` 按进程发现桌面版的随机端口（见 §4.3）。
+- 桌面版与 `dsh web` 用不同 profile，setup 只装 `web`：现在默认两个都装。
+- 模型目录回退缓存永不过期，dsh web ↔ 桌面版切换后用错 provider：缓存 60 秒，端点切换时作废并重新选模型。
+- `stop-all` 没有 PID 文件时按镜像名兜底，会把用户自己开的 QQ.exe 关掉：Windows 上只停本脚本起的进程。
 
 ## 1. 前置检查
 
@@ -108,22 +74,27 @@ node -e "const net=require('net');for(const p of [3080,3000,3001,5099,3100,8091,
 set BK=%USERPROFILE%\dsh-backup
 mkdir "%BK%\profiles" "%BK%\plugins" 2>nul
 xcopy "%USERPROFILE%\.dsh\profiles\web" "%BK%\profiles\web" /E /I /H /Y
+mkdir "%BK%\profiles\desktop" 2>nul
+copy "%USERPROFILE%\.dsh\profiles\desktop\package.json" "%BK%\profiles\desktop\" >nul
+copy "%USERPROFILE%\.dsh\profiles\desktop\cordis.patch.yml" "%BK%\profiles\desktop\" >nul
 copy "%USERPROFILE%\.dsh\.credentials.yaml" "%BK%\" >nul
 xcopy "%USERPROFILE%\.dsh\plugins" "%BK%\plugins" /E /I /H /Y
 ```
 
-> 真实的 `profiles/web` 通常很小；`profiles/desktop` 可能包含 Electron 运行时，不必整体备份。
+> setup-dsh 会同时改 `profiles/web` 和 `profiles/desktop`；`profiles/desktop` 的 `node_modules` 可能很大，只备份 `package.json` 与 `cordis.patch.yml` 即可。
 
 ---
 
 ## 3. 安装/更新本项目
 
 ```bat
-git clone https://github.com/y083245/dsh-memory-brain.git
+git clone -b windows-native https://github.com/y083245/dsh-memory-brain.git
 cd dsh-memory-brain
-npm ci
-copy config.example.json config.json
+start-all.bat
 ```
+
+`start-all.bat` 第一次运行会自动 `npm ci`、从示例生成 `config.json` 并询问管理员 QQ。
+手动部署时仍可 `npm ci` + `copy config.example.json config.json`。
 
 如果需要隔离测试 DSH，设置临时 `DSH_HOME`（不要用真实配置）：
 
@@ -137,24 +108,22 @@ copy "%USERPROFILE%\.dsh\.credentials.yaml" "%DSH_HOME%\" >nul
 
 ## 4. DSH 端
 
-### 4.1 运行 setup-dsh（真实部署）
-
-> ⚠️ **全新机器先跑一次 `dsh web --no-open`**（3080 起来后 Ctrl+C），让 DSH 自己生成
-> `%USERPROFILE%\.dsh\profiles\web`。否则 setup-dsh 会自建一个缺 base bundle 的 profile，
-> DSH 从此起不来（详见 §0.5 第 1 条）。
+### 4.1 运行 setup-dsh（`start-all.bat` 每次都会自动跑，通常不用手动）
 
 ```bat
-set DSH_HOME=%USERPROFILE%\.dsh
-node scripts\setup-dsh.mjs
+node scripts\setup-dsh.mjs            rem 装进 web 和 desktop 两个 profile（装了桌面版或 profiles\desktop 已存在时）
+node scripts\setup-dsh.mjs web        rem 只装指定 profile
 ```
 
-它做三件事：
+它做的事（幂等，没改动时 1 秒内结束）：
 
 1. 从 `dsh/agent-presets/` 生成 `plugins/qq-agent-presets/presets/*.patch.yml`；
-2. 把 `qq-mode-console` / `qq-agent-presets` 链接进 `profiles/web`；
-3. 把 3 个 MCP server 写入 `profiles/web/cordis.patch.yml`，并尝试 `dsh plugin --profile web install`。
+2. 把 `qq-mode-console` / `qq-agent-presets` 链接进每个 profile（profile 不存在时按 DSH 模板新建）；
+3. 把 3 个 MCP server 写入各 profile 的 `cordis.patch.yml`，有改动时跑 `dsh plugin --profile <p> install`；
+4. 最后一行打印 `[setup-dsh] RESULT changed=<0|1> profiles=… changedProfiles=…`，`start-all` 据此判断要不要重启 DSH。
 
-看到 `dsh plugin --profile web install: OK` 即成功。**装完必须重启 DSH**。
+**改动了正在运行的那个 profile 时必须重启 DSH 才会加载**；`start-all.bat` 会问是否自动重启
+（无人值守时设 `QQB_ASSUME_YES=1` 自动同意）。
 
 > **MCP 的 `command` 是一个长期有效的 node 绝对路径**（DSH 每次启动都按它拉进程）。
 > setup 会自己避开临时/沙箱 node，并在选不干净时打印：
@@ -166,66 +135,49 @@ node scripts\setup-dsh.mjs
 > 看到这句就先装系统版 Node，或用 `QQ_BRIDGE_NODE_BIN` 指定后再重跑 setup。
 > 同理，`dsh` CLI 不在 PATH 里时可用 `QQ_BRIDGE_DSH_BIN` 指向 `dsh.cmd`。
 
-### 4.2 模型 provider（配错就完全收不到回复）
+### 4.2 模型 provider（默认跟随 DSH，一般不用配）
 
-`config.json` 的 `dsh.provider` 必须在当前 DSH 的模型目录里，否则会得到：
+`config.json` 的 `dsh.provider` 默认是 `"auto"`：桥接用当前 DSH 的默认模型
+（`dsh web` 常见 `deepseek-official`，桌面版常见 `deepseek-account`），换版本不用改配置。
+写成具体值时，不在当前 DSH 目录里会临时回退到目录默认值并在日志里提示。
 
-```text
-session/model-unavailable: Select an available model before sending a message.
-```
-
-**不要照抄文档里的 provider 名字**——它取决于 DSH 装了什么账号/provider。先查（DSH 起好之后）：
-
-```bat
-node -e "import('./src/dsh-client.js').then(async m=>{const a=new m.NodeApiClient('http://127.0.0.1:3080');const c=m.unwrap(await a.callUnary('session/modelCatalog',{}),'catalog');console.log(c.default,c.routableProviders)})"
-```
-
-本机（2026-11-01，DSH 0.2.1-rc.5 web profile）实测输出：
+**全新安装的 DSH 一个可用模型都没有**（`session/modelCatalog` 的 `routableProviders: []`），
+所有 QQ 消息都会以 `session/model-unavailable` 失败。`start-all` 和桥接都会明确提示：
 
 ```text
-{ provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'max' } [ 'deepseek-official' ]
+[warn] DSH 里还没有可用的模型（没登录 DeepSeek 账号，也没填 API Key），机器人收到消息也回不了
 ```
 
-别的机器常见 `deepseek-account` / `deepseek-flash`。把查到的值写进 `config.json`：
-
-```jsonc
-"dsh": {
-  "provider": "deepseek-official",
-  "model": "deepseek-flash",
-  "reasoningEffort": "max"
-}
-```
-
-新版桥接会在 `ensureChatModel()` 里读 `session/modelCatalog`，不匹配时临时回退到目录默认值并打印：
-
-```text
-config.json 的 DSH 模型 xxx/yyy 不在当前 DSH 目录中；本次临时改用 <目录默认>/<默认模型>
-```
-
-### 4.3 启动 DSH
+处理：桌面版里登录 DeepSeek 账号或在「设置 → 模型」填 API Key；`dsh web` 则浏览器打开 3080 同样操作。
+填完不用重启。手动查目录：
 
 ```bat
-dsh web --no-open
+node -e "import('./src/dsh-discovery.js').then(async m=>{const e=await m.resolveDshEndpoint();console.log(m.describeEndpoint(e),await m.checkDshModels(e.baseUrl))})"
 ```
 
-或让 `start-all.bat` 启动。验证：
+### 4.3 DSH：网页版 / 桌面版都支持
 
-```bat
-node -e "fetch('http://127.0.0.1:3080').then(r=>console.log(r.status)).catch(e=>console.log('ERR',e.message))"
-```
+| | `dsh web` | 桌面版（DeepSeek Harness） |
+|---|---|---|
+| 端口 | 固定 3080（`config.json` 的 `dsh.baseUrl`） | `--port 0`，**每次随机** |
+| profile | `profiles/web` | `profiles/desktop` |
+| 鉴权 | 同一份 `~/.dsh/.credentials.yaml` 里的签名密钥离线铸造 Cookie | 同左 |
 
-> ⚠️ **不要用桌面版 GUI 代替 `dsh web`**：桌面版 GUI 的 API 绑定在**随机端口**上
-> （实测 62662），不监听 3080；桥接只认 `config.json` 的 `dsh.baseUrl`（默认 3080）。
-> 只开 GUI 的结果是控制台 `dshReady:false`、`连接 DSH 事件流…` 后立刻
-> `DSH 事件流已结束（本次收到 0 帧）`。GUI 可以和 `dsh web` 同时开着，互不影响（不同 profile）。
+桥接与 `start-all` 都用 `src/dsh-discovery.js` 决定连哪个（`dsh.target`，默认 `auto`）：
 
-> 桌面版 `dsh.cmd` 是 Electron 启动器（含 `ELECTRON_RUN_AS_NODE=1` 和 `DeepSeek Harness.exe`）。
-> 桥接的 `commandSpec()` 已识别这类垫片并回退 `cmd.exe`；如果手工启动，直接调 `dsh.cmd` 即可。
-> `dsh` 不在 PATH 时不需要手工配：`findDshCli()` 会按
-> PATH → `%ProgramFiles%`/`%LOCALAPPDATA%\Programs` 下的 `DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd`
-> → 各盘 `deepseek-harness\...` 的顺序找；也可用 `QQ_BRIDGE_DSH_BIN` 显式指定。
+1. `auto`：`dsh.baseUrl`（3080）能答 `settings/describe` 就用 `dsh web`；否则找桌面版；
+2. 找桌面版：PowerShell 查命令行含 `dsh-desktop-host\lib\index.js` 的进程（它的第 2 个参数就是 profile 目录，
+   能看出用的是哪个 `DSH_HOME`），再用 `Get-NetTCPConnection`（退回 `netstat`）列出它监听的端口，逐个铸造 Cookie 探测；
+3. 桥接运行中 DSH 不可达时每 10 秒重新发现一次——桌面版重启换了端口也会自动切过去（日志 `DSH 端点已切换`）。
 
----
+`start-all.bat` 的行为：桌面版开着 → 用桌面版；否则 3080 有 `dsh web` → 用它；都没有 → 启动 `dsh web`
+（装了桌面版时用它自带的 `resources\runtime\cli\bin\dsh.cmd`）。`--desktop` / `--web` 可强制指定，
+`--desktop` 且桌面版没开时会替你打开它。
+
+> 桌面版 `dsh.cmd` 是 Electron 启动器（`ELECTRON_RUN_AS_NODE=1` + `DeepSeek Harness.exe`）。
+> `commandSpec()` 会把它直接解析成 exe + 参数数组启动，不经过 cmd.exe，所以装在 `Program Files` 这种带空格的目录也没问题。
+> `dsh` 不在 PATH 时 `findDshCli()` 会按 PATH → `%ProgramFiles%`/`%LOCALAPPDATA%\Programs` 下的
+> `DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd` → 各盘 `deepseek-harness\...` 的顺序找；也可用 `QQ_BRIDGE_DSH_BIN` 显式指定。
 
 ## 5. QQ 与 SnowLuma
 
@@ -244,33 +196,28 @@ start "" "E:\qq-nt\QQ.exe" --user-data-dir="E:\QQ_file"
 node -e "import('./src/runtime/process.mjs').then(async m=>console.log(await m.findPidsByImage('QQ.exe')))"
 ```
 
-### 5.2 SnowLuma
+### 5.2 SnowLuma（由用户自己下载、注入）
 
-1. 解压 `SnowLuma-v*-win-x64-lite.zip` 到例如 `C:\SnowLuma`。
-2. 把已有的 `config` 目录一并放进去（需要保留 `onebot_<QQ号>.json`）。
-3. **自动注入 QQ 只能靠环境变量 `SNOWLUMA_HOOK_AUTOLOAD`，不能改 `config\runtime.json`**：
+> SnowLuma 是第三方组件，**不要自动下载/部署**；按 EULA 由用户自行安装。
+> Windows 上 `start-all.bat` **默认不再替用户启动 QQ / SnowLuma**：约定是用户先自己打开 SnowLuma、注入 QQ，
+> 再运行 `start-all.bat`。（需要旧行为时设 `START_SNOWLUMA=1`，它会按 `orchestrator.qqBin` / `snowDir` 启动两者。）
 
-```bat
-set SNOWLUMA_HOOK_AUTOLOAD=1
-node "C:\SnowLuma\index.mjs"
-```
+用户侧要做到：
 
-> 实测（2026-11-01，SnowLuma 2.3.3 win-x64-lite）：把 `runtime.json` 的 `hookAutoLoad` 改成
-> `true`，SnowLuma 启动时会把它重写回 `false`，日志里也不会出现
-> `hook auto-load enabled`，QQ 永远挂不上，OneBot 3000/3001 不起。
-> 环境变量优先于 `runtime.json` 且不会被重写，是唯一可靠的启动器侧开关。
-> `start-all.bat` / `scripts/start-all.mjs` 起 SnowLuma 时已经默认注入该变量（用户显式设置则尊重用户值）。
+1. 打开 SnowLuma（`launcher.bat` / `SnowLuma.exe`），在 WebUI（5099）里注入 QQ 并登录；
+2. OneBot 网络配置里 **HTTP 服务端（3000）与 WebSocket 服务端（3001）都启用**——桥接收消息走 WS，
+   发消息、MCP 工具、语音转写走 HTTP，缺一个都不能正常收发。
 
-关键是这个开关**只影响启动那一刻之后发现的 QQ 进程**：QQ 先登录、SnowLuma 后启动，必须开着它，
-否则 SnowLuma 不会回头去挂已经运行的 QQ。
+`start-all.bat` 随后：
 
-4. 启动：
+1. 等两个端口都通（默认最多 300 秒，`QQB_ONEBOT_WAIT_SECONDS` 可调），期间每 30 秒提示一次；
+2. 找 SnowLuma 目录：`config.json` 的 `snowluma.homeDir` / `orchestrator.snowDir` → `SNOWLUMA_HOME` / `SNOW_DIR`
+   → **监听 3001 的进程及父进程链**（`SnowLuma.exe` 路径、绝对路径的 `index.mjs`、双击 `launcher.bat` 时父 cmd.exe 的命令行）
+   → 常见解压位置；都找不到时在控制台问一次；
+3. 用 `config/onebot_<QQ号>.json` 里的 token 分别探测 HTTP（`get_login_info`）和 WebSocket（`?access_token=`），
+   把能用的 `accessToken`（HTTP）、`wsAccessToken`（WS）、`homeDir` 写回 `config.json`，并打印机器人账号。
 
-```bat
-node "C:\SnowLuma\index.mjs"
-```
-
-或由 `start-all.bat` 启动。日志检查：
+日志检查（SnowLuma 自己的日志）：
 
 ```text
 [Hook] login detected: PID=... UIN=...
@@ -278,9 +225,8 @@ node "C:\SnowLuma\index.mjs"
 [OneBot.WS-Server] listening 127.0.0.1:3001
 ```
 
-> SnowLuma 是第三方组件，**不要自动下载/部署**；按 EULA 由用户自行安装。本项目只启动用户已经放好的目录。
-
----
+> QQ 先登录、SnowLuma 后启动时要让 SnowLuma 回头去挂已有的 QQ：启动前 `set SNOWLUMA_HOOK_AUTOLOAD=1`，
+> 或在 WebUI 的自动化设置里打开自动注入。**别改 `config\runtime.json` 的 `hookAutoLoad`**，SnowLuma 启动时会把它写回去。
 
 ## 6. 业务配置 `config.json`
 
@@ -323,19 +269,24 @@ node "C:\SnowLuma\index.mjs"
 ## 7. 启动全栈
 
 ```bat
-start-all.bat
+start-all.bat                rem 自动：桌面版开着就用桌面版，否则 dsh web
+start-all.bat --desktop      rem 强制桌面版（没开会替你打开）
+start-all.bat --web          rem 强制 dsh web
 ```
 
-顺序：RAG（可选）→ DSH → QQ（已运行则跳过）→ SnowLuma → 等 OneBot 3000/3001 → qq-bridge。
+顺序：依赖（缺了自动 `npm ci`）→ config.json（缺了从示例生成并询问管理员 QQ）→ RAG（可选）
+→ setup-dsh（两个 profile）→ DSH（发现 / 启动 / 必要时重启）→ 模型检查 → 等 OneBot 并配好 token → qq-bridge。
 
 成功后输出：
 
 ```text
 全部就绪
-  DSH              http://127.0.0.1:3080
-  SnowLuma WebUI   http://127.0.0.1:5099
+  DSH              DSH 桌面版 http://127.0.0.1:6xxxx（PID …，profile: desktop）
+  QQ 机器人账号    <昵称>（<QQ号>）
   桥接控制台       http://127.0.0.1:3100/
 ```
+
+桥接启动后 60 秒内没同时看到「SnowLuma 已连接」和「DSH 已就绪」会给出 warn；桥接进程提前退出会把日志最后 12 行直接打出来。
 
 ### 验证桥接
 
@@ -397,14 +348,15 @@ node -e "fetch('http://127.0.0.1:8093/health').then(r=>r.json()).then(j=>console
 ## 9. 停止与清理
 
 ```bat
-stop-all.bat            rem 停桥接 / RAG / SnowLuma / QQ，DSH 保留
-stop-all.bat --all      rem 连 DSH 一起停
+stop-all.bat            rem 停桥接 / RAG；QQ、SnowLuma、DSH 都保留
+stop-all.bat --all      rem 连本脚本起的 dsh web 一起停（桌面版是用户自己开的，不关）
 ```
 
 Windows 实现会：
 
 - 先按 `%USERPROFILE%\.ai-companion-run\*.pid` 杀整棵子进程树（`taskkill /PID <pid> /T /F`）；
 - 没有可信 PID 时，端口仍被占则提示“不是本脚本起的”，不误杀；
+- QQ / SnowLuma 只有在本脚本用 `START_SNOWLUMA=1` 起过（留了 PID 文件）时才会停，否则显示「由你自己管理，保留运行」；
 - 不要把 `start.bat` 当一键编排：它只是桥接守护。
 
 ---
@@ -432,11 +384,14 @@ cd sidecars\memory-rag
 
 | 坑 | 现象 | 处理 |
 |---|---|---|
-| DSH provider 不匹配 | `session/model-unavailable`，QQ 完全不回 | 按 §4.2 的 `session/modelCatalog` 查到 `default`，改 `dsh.provider` / `dsh.model`；新版桥接也会自动回退并提示 |
+| DSH 没有可用模型 / provider 不匹配 | `session/model-unavailable`，QQ 回「agent 处理出错」 | 全新 DSH 要先登录 DeepSeek 账号或填 API Key（§4.2）；`dsh.provider` 保持 `"auto"` 即跟随 DSH 默认模型 |
+| 只开了桌面版 | 旧版桥接 `dshReady:false`、事件流 0 帧 | 已修：桥接按进程发现桌面版的随机端口（§4.3）；日志首行 `DSH 端点：DSH 桌面版 http://127.0.0.1:…` |
+| 刚装好 / 更新后 QQ 不调工具、预设找不到 | DSH 还在用旧 profile | 重启 DSH：`start-all.bat` 会提示并可自动重启；桌面版手动退出要在托盘里退出 |
 | MCP 全起不来 | DSH 日志只写「MCP 启动失败」 | 多半是 `cordis.patch.yml` 里的 `command` 指向了已被回收的临时/沙箱 node；重装系统 Node 后重跑 `node scripts\setup-dsh.mjs`（脚本会告警） |
 | SnowLuma 不挂 QQ | OneBot 3000/3001 不起；日志只有 `awaiting login` 或什么都没有 | 用 `SNOWLUMA_HOOK_AUTOLOAD=1` 重启 SnowLuma（start-all 已默认注入）；改 `runtime.json` 会被重置，没用 |
-| stop-all 后 start-all 卡在 OneBot | 同上，stop-all 杀了 QQ，新 QQ 没被挂上 | 已修：`start-all` 起 SnowLuma 时注入 `SNOWLUMA_HOOK_AUTOLOAD=1`；仍失败就扫码登录后重跑 start-all |
-| Electron `.cmd` | 手工用 node 跑 `dsh.cmd` 的 JS 会缺 Electron 运行时 | 直接调 `dsh.cmd`；桥接已自动回退 `cmd.exe` |
+| start-all 卡在「等待 SnowLuma 的 OneBot 服务」 | WS 3001 / HTTP 3000 有一个没开 | 在 SnowLuma 里注入 QQ，并确认 OneBot 的 HTTP 服务端和 WebSocket 服务端都已启用；端口不同就改 `snowluma.httpUrl` / `wsUrl` |
+| OneBot 鉴权失败 | `所有候选 token 都被拒绝` | `snowluma.homeDir` 填 SnowLuma 目录；或手填 `snowluma.accessToken`（HTTP）/ `snowluma.wsAccessToken`（WS） |
+| Electron `.cmd` | 手工用 node 跑 `dsh.cmd` 的 JS 会缺 Electron 运行时 | 直接调 `dsh.cmd`；编排脚本会把它解析成 `DeepSeek Harness.exe` + `ELECTRON_RUN_AS_NODE=1` 直接启动 |
 | venv 路径 | “找不到 Python / memory-rag 虚拟环境” | 确认 `sidecars\memory-rag\.venv\Scripts\python.exe`；代码已修复传 `.venv` 目录 |
 | 健康超时 | 服务已起但一直“未就绪” | Windows 上 /health 约 4s，代码超时已 10s；旧版本需升级 |
 | 显存不足 | embedding 跳过 | 6～8 GB 显卡用云端 embedding；或接受 BM25 |
@@ -450,13 +405,12 @@ cd sidecars\memory-rag
 
 ## 12. 完成检查清单
 
-- [ ] `node -v` ≥ 24
-- [ ] `npm ci` 成功
-- [ ] `node scripts\setup-dsh.mjs` 成功，并已重启 DSH
-- [ ] `config.json` 的 `ownerQQ` / `allow.private` / `snowluma.homeDir` 正确
-- [ ] SnowLuma 日志有 `login detected` 和 3000/3001 listening
-- [ ] `start-all.bat` 输出「全部就绪」
+- [ ] `node -v` ≥ 22.13（建议 24）
+- [ ] SnowLuma 已注入 QQ，OneBot HTTP（3000）与 WebSocket（3001）都已启用
+- [ ] `start-all.bat` 输出「全部就绪」，且没有「DSH 里还没有可用的模型」警告（有就先登录账号 / 填 API Key）
+- [ ] `config.json` 的 `ownerQQ` / `allow.private` 正确；`snowluma.accessToken` / `wsAccessToken` / `homeDir` 已被自动填好
+- [ ] 桌面版和 `dsh web` 各试一次（`start-all.bat --desktop` / `--web`），`bridge.log` 首行的 `DSH 端点：` 与所选一致
 - [ ] `/api/status` 返回 `dshReady=true`、`snowluma.connected=true`
 - [ ] 真实私聊收到 AI 回复
-- [ ] `stop-all.bat --all` 后端口全部释放
+- [ ] `stop-all.bat --all` 后桥接与 dsh web 的端口释放，QQ / SnowLuma 仍在运行
 - [ ] 没有把 `config.json`、`state/`、`.venv`、token 提交进 git
