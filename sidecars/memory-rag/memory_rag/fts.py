@@ -92,6 +92,21 @@ class ChunkDB:
         self.lock = threading.RLock()
         self.conn = sqlite3.connect(str(path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        # UPGRADE_PATCH：先看数据版本，再决定动不动这个库（接口约定 §2.1）。
+        # 比程序新 → 只读：连 journal_mode 都不设（改它会改文件头），也不建表；
+        # query_only 是兜底，哪条写路径漏了拦截，SQLite 自己也会拒绝。
+        from .migrations import LATEST, backup, migrate, user_version
+        db_version = user_version(self.conn)
+        self.readonly = db_version > LATEST
+        self.migration: dict | None = None
+        if self.readonly:
+            self.conn.execute("PRAGMA query_only=ON")
+            self.schema = {"db": db_version, "code": LATEST, "readonly": True}
+            return
+        # 老库（有表、版本号低）在建表 / 切 WAL 之前先备份，备份是原封不动的旧库
+        bak = None
+        if db_version < LATEST and self.conn.execute("SELECT COUNT(*) FROM sqlite_master").fetchone()[0]:
+            bak = str(backup(self.conn, path, db_version))
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
         # RAG_PATCH（P2）：删除时把释放的页和单元清零。否则删掉的块原文会留在数据库的空闲页里，
@@ -103,10 +118,20 @@ class ChunkDB:
         # 函数内 import：fts 与 l2 互相引用，模块级 import 会成环。
         from .l2 import ensure_schema
         ensure_schema(self.conn)
+        # UPGRADE_PATCH：表都在了再按序迁移（备份已在上面做过，这里不再备份）
+        if db_version < LATEST:
+            self.migration = {**migrate(self.conn, path, has_data=False), "backup": bak}
+        self.schema = {"db": user_version(self.conn), "code": LATEST, "readonly": False}
         try:
             path.chmod(0o600)
         except OSError:
             pass
+
+    def check_writable(self) -> None:
+        """UPGRADE_PATCH：只读模式（库比程序新）下所有写入口先调这个，抛 SchemaTooNew。"""
+        if self.readonly:
+            from .migrations import SchemaTooNew, readonly_message
+            raise SchemaTooNew(readonly_message(int(self.schema["db"])))
 
     # ---------------------------------------------------------------- 元数据
 
@@ -121,6 +146,7 @@ class ChunkDB:
         return None if row is None else str(row["value"])
 
     def set_meta(self, k: str, v: str) -> None:
+        self.check_writable()  # UPGRADE_PATCH
         with self.lock:
             self.conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?,?)", (k, v))
             self.conn.commit()
@@ -129,6 +155,7 @@ class ChunkDB:
 
     def upsert(self, chunks: Sequence[dict], now_ms: int) -> None:
         """chunks: [{chunk_id, text, **meta}]；块表和 FTS 在同一个事务里写，块 ID 一致。"""
+        self.check_writable()  # UPGRADE_PATCH
         with self.lock:
             cur = self.conn.cursor()
             for c in chunks:
@@ -161,6 +188,7 @@ class ChunkDB:
 
     def clear(self, keep_l2: bool = False) -> None:
         """RAG_PATCH（P3）：默认连 L2 表一起清空；全量重建时传 keep_l2=True，摘要留着靠对账挂回。"""
+        self.check_writable()  # UPGRADE_PATCH
         with self.lock:
             cur = self.conn.cursor()
             cur.execute("DELETE FROM chunks")
@@ -180,6 +208,7 @@ class ChunkDB:
 
         FTS 表只按 chunk_id 索引，没有 key 列，所以先在块表里查出本会话的 chunk_id 再删。
         """
+        self.check_writable()  # UPGRADE_PATCH
         with self.lock:
             cur = self.conn.cursor()
             # RAG_PATCH（P3）：L2 一起删；必须在删 chunks 之前（distill_state 只按 chunk_id 记）
@@ -250,6 +279,50 @@ class ChunkDB:
             per_key = {r["key"]: int(r["n"]) for r in self.conn.execute("SELECT key, COUNT(*) AS n FROM chunks GROUP BY key")}
             reasons = {r["cut_reason"]: int(r["n"]) for r in self.conn.execute("SELECT cut_reason, COUNT(*) AS n FROM chunks GROUP BY cut_reason")}
         return {"chunks": total, "per_key": per_key, "cut_reason": reasons}
+
+    # ---------------------------------------------------------------- 实时脑图（BRAIN_PATCH）
+
+    def graph_chunks(self, keys: Sequence[str] | None, limit: int) -> tuple[list[dict], int]:
+        """BRAIN_PATCH：脑图用的块元数据，按 t_end 取最新 limit 条，返回 (块, 没返回的条数)。
+
+        **故意不 SELECT text**：脑图快照里不能有原文（规格 §12 Q1），在 SQL 层就不取，
+        免得以后有人顺手把整行 dict 吐出去。keys 为 None = 全部会话；空列表 = 什么都不给。
+        speakers / speaker_names 在库里是逗号拼接（segmenter.Chunk.meta），照 distill.py 的读法拆。
+        """
+        where, args = "", []
+        if keys is not None:
+            keys = [str(k) for k in keys]
+            if not keys:
+                return [], 0
+            where = f" WHERE key IN ({','.join('?' for _ in keys)})"
+            args = list(keys)
+        with self.lock:  # FIX1031_PATCH：理由见 get_meta；计数与取行在同一把锁里，两者一致
+            total = int(self.conn.execute(f"SELECT COUNT(*) AS n FROM chunks{where}", args).fetchone()["n"])
+            rows = self.conn.execute(
+                "SELECT chunk_id, key, day, t_start, t_end, title, n_msgs, speakers, speaker_names "
+                f"FROM chunks{where} ORDER BY t_end DESC, chunk_id ASC LIMIT ?", [*args, int(limit)],
+            ).fetchall()
+        out = [{"chunk_id": r["chunk_id"], "key": r["key"], "day": r["day"],
+                "t_start": int(r["t_start"]), "t_end": int(r["t_end"]), "title": r["title"],
+                "n_msgs": int(r["n_msgs"]),
+                "speakers": [s for s in str(r["speakers"] or "").split(",") if s],
+                "speaker_names": [s for s in str(r["speaker_names"] or "").split(",") if s]}
+               for r in rows]
+        return out, max(0, total - len(out))
+
+    def chunk_text(self, key: str, chunk_id: str) -> dict | None:
+        """BRAIN_PATCH：单块含原文（控制台点开某个话题块时才取）。key 不匹配与不存在一样返回 None。"""
+        if not key or not chunk_id:
+            return None
+        with self.lock:  # FIX1031_PATCH：理由见 get_meta
+            r = self.conn.execute(
+                "SELECT chunk_id, key, day, title, t_start, t_end, n_msgs, text FROM chunks "
+                "WHERE chunk_id=? AND key=?", (str(chunk_id), str(key))).fetchone()
+        if r is None:
+            return None
+        return {"chunk_id": r["chunk_id"], "key": r["key"], "day": r["day"], "title": r["title"],
+                "t_start": int(r["t_start"]), "t_end": int(r["t_end"]), "n_msgs": int(r["n_msgs"]),
+                "text": r["text"]}
 
     def total_chars(self) -> int:
         """APIHUB_PATCH：全部块正文的字数之和（给桥接估算重建量）。读也要持锁，理由同 stats。"""
