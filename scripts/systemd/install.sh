@@ -69,7 +69,10 @@ if [ "$MODE" = uninstall ]; then
 fi
 
 # ── 解析路径（和 start-all.sh 的取法一致）──────────────────────────────
-NODE_BIN="${NODE_BIN:-$HOME/.nvm/versions/node/v24.22.1/bin/node}"
+# 没指定时取 nvm 里最新的：非交互 shell 的 PATH 里常常只有系统 node。
+if [ -z "${NODE_BIN:-}" ]; then
+  NODE_BIN="$(ls -d "${NVM_DIR:-$HOME/.nvm}"/versions/node/v*/bin/node 2>/dev/null | sort -V | tail -n 1 || true)"
+fi
 [ -x "$NODE_BIN" ] || NODE_BIN="$(command -v node || true)"
 [ -n "$NODE_BIN" ] && [ -x "$NODE_BIN" ] || { err "找不到 node"; exit 1; }
 NODE_DIR="$(dirname "$NODE_BIN")"
