@@ -94,7 +94,7 @@ await test('角色卡：GET /api/roles 带 origin；保存出厂卡写进 state/
       assert.equal(sha(factoryFile), before, '出厂文件不变');
       const userFile = path.join(h.temp, 'state', 'roles', '甲.md');
       assert.equal(fs.readFileSync(userFile, 'utf8'), '# 甲\n用户改过：话痨。\n');
-      assert.equal(fs.statSync(userFile).mode & 0o777, 0o600);
+      if (process.platform !== 'win32') assert.equal(fs.statSync(userFile).mode & 0o777, 0o600);
       res = await call(port, '/api/roles');
       assert.equal(res.json.summaries.find((s) => s.name === '甲').origin, 'modified');
       res = await call(port, '/api/roles/content?name=甲'.replace('甲', encodeURIComponent('甲')));
@@ -156,7 +156,7 @@ await test('角色卡：新建 / 改名 / 删除都走覆盖层，出厂目录�
       assert.equal(fs.existsSync(path.join(h.temp, 'state', 'roles', '丙.md')), false);
     });
     assert.equal(treeHash(rolesDir), before, '出厂 roles/ 一个字节都没变');
-    assert.equal(fs.statSync(path.join(h.temp, 'state', 'roles')).mode & 0o777, 0o700);
+    if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(h.temp, 'state', 'roles')).mode & 0o777, 0o700);
   } finally { await h.close(); }
 });
 
@@ -211,8 +211,8 @@ await test('仿真提示词：保存 → 写覆盖、出厂 yml 不变、派生 
       assert.equal(res.status, 200, res.body);
       assert.equal(res.json.requiresRestart, true);
       assert.equal(fs.readFileSync(overrideFile, 'utf8'), next);
-      assert.equal(fs.statSync(overrideFile).mode & 0o777, 0o600);
-      assert.equal(fs.statSync(path.dirname(overrideFile)).mode & 0o777, 0o700);
+      if (process.platform !== 'win32') assert.equal(fs.statSync(overrideFile).mode & 0o777, 0o600);
+      if (process.platform !== 'win32') assert.equal(fs.statSync(path.dirname(overrideFile)).mode & 0o777, 0o700);
       assert.equal(treeHash(presetsDir), before, '出厂 preset 不变');
       assert.match(fs.readFileSync(patchFile, 'utf8'), /【覆盖层测试】用户加的一句。/);
       res = await call(port, `/api/preset/sim-prompt?preset=${name}`);

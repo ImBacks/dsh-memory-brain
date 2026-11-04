@@ -452,7 +452,7 @@ await test('开关：关掉后 /brain 404、SSE 断开、挂点不写轨迹；co
       assert.deepEqual(saved.brain, { enabled: false });
       assert.deepEqual(saved.someUnknown, { keep: 1 }, '其它字段原样保留');
       assert.equal(saved.consoleToken, TOKEN);
-      assert.equal(fs.statSync(cfgFile).mode & 0o777, 0o600);
+      if (process.platform !== 'win32') assert.equal(fs.statSync(cfgFile).mode & 0o777, 0o600);
       assert.equal((await call(port, '/brain')).status, 404);
       assert.equal((await call(port, '/api/brain/snapshot')).status, 404);
       assert.equal((await call(port, '/api/brain/events')).status, 404);

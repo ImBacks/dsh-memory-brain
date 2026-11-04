@@ -97,11 +97,11 @@ await test('目录 700、文件 600；按本地日期分文件', async () => {
   const feed = createBrainFeed({ stateDir });
   feed.emit('wake', { key: 'private:1', e: { reason: 'message' } });
   const dir = traceDirOf(stateDir);
-  assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
-  assert.equal(fs.statSync(path.join(stateDir, 'brain')).mode & 0o777, 0o700);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(stateDir, 'brain')).mode & 0o777, 0o700);
   const file = path.join(dir, `${localDay(Date.now())}.jsonl`);
   assert.ok(fs.existsSync(file));
-  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
 });
 
 await test('msg.in / msg.out 不写轨迹；开关关着什么都不写', async () => {
@@ -162,7 +162,7 @@ await test('写失败（目录不可写 / 是文件）不抛，只告警一次',
   const feed2 = createBrainFeed({ stateDir: roDir, log: (m) => logs2.push(m) });
   assert.doesNotThrow(() => { feed2.emit('recall', { key: 'private:1' }); feed2.emit('recall', { key: 'private:1' }); });
   // root 跑测试时只读目录挡不住写入：那种情况下不要求告警
-  if (process.getuid?.() !== 0) assert.equal(logs2.filter((l) => l.includes('写轨迹')).length, 1);
+  if (process.platform !== 'win32' && process.getuid?.() !== 0) assert.equal(logs2.filter((l) => l.includes('写轨迹')).length, 1);
   fs.chmodSync(traceDirOf(roDir), 0o700);
 });
 

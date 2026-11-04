@@ -92,8 +92,8 @@ await test('覆盖文件 600、目录 700、原子写不留临时文件；remove
   const file = writeOverride(root, name, '正文');
   assert.equal(file, overridePath(root, name));
   assert.equal(file, path.join(root, 'state', 'preset-overrides', 'qq-chat-v2.prefix.md'));
-  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
-  assert.equal(fs.statSync(path.dirname(file)).mode & 0o777, 0o700);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(path.dirname(file)).mode & 0o777, 0o700);
   assert.deepEqual(fs.readdirSync(path.dirname(file)), ['qq-chat-v2.prefix.md']);
   assert.equal(readOverride(root, name), '正文');
   assert.equal(removeOverride(root, name), true);

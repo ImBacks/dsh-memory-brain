@@ -139,7 +139,8 @@ def test_backup_is_complete_and_private(tmp_path: Path):
     [bak] = baks(db_path)
     assert bak.name == "rag.sqlite3.bak-v0"
     assert db.migration["backup"] == str(bak)
-    assert stat.S_IMODE(bak.stat().st_mode) == 0o600
+    if os.name != 'nt':  # Windows 没有 POSIX 权限位
+        assert stat.S_IMODE(bak.stat().st_mode) == 0o600
     assert version_of(bak) == 0
     assert dump(bak) == before
     conn = sqlite3.connect(str(bak))
@@ -168,7 +169,8 @@ def test_backup_name_conflict_gets_time_suffix(tmp_path: Path):
     assert old.read_bytes() == b"older backup"  # 旧备份不被覆盖
     new = [p for p in found if p != old][0]
     assert new.name.startswith("rag.sqlite3.bak-v0-")
-    assert stat.S_IMODE(new.stat().st_mode) == 0o600
+    if os.name != 'nt':  # Windows 没有 POSIX 权限位
+        assert stat.S_IMODE(new.stat().st_mode) == 0o600
     assert version_of(new) == 0
 
 

@@ -107,7 +107,8 @@ def service(monkeypatch, state):
     monkeypatch.setenv("MEMORY_RAG_STATE_DIR", str(state))
     svc = Service(str(ROOT / "config.yml"), embedder=FakeEmbedder())
     assert svc.cfg["paths"].state == state
-    assert str(svc.cfg["paths"].state).startswith(tempfile.gettempdir())
+    # macOS 的临时目录经过符号链接，Windows 可能是 8.3 短路径：比较真实路径。
+    assert os.path.realpath(str(svc.cfg["paths"].state)).startswith(os.path.realpath(tempfile.gettempdir()))
     yield svc
     close_rag(svc)
 

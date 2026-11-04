@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import yaml from 'js-yaml';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -134,9 +134,9 @@ function runMigrate(repo, args, { umask } = {}) {
   const script = path.join(repo, 'scripts', 'migrate.mjs');
   const cmd = umask !== undefined
     ? spawnSync('sh', ['-c', `umask ${umask}; exec "$0" "$@"`, process.execPath, script, '--repo', repo, ...args], {
-      env: { ...process.env, ...GIT_ENV, HOME: home }, encoding: 'utf8',
+      env: { ...process.env, ...GIT_ENV, HOME: home, USERPROFILE: home }, encoding: 'utf8',
     })
-    : spawnSync(process.execPath, [script, '--repo', repo, ...args], { env: { ...process.env, ...GIT_ENV, HOME: home }, encoding: 'utf8' });
+    : spawnSync(process.execPath, [script, '--repo', repo, ...args], { env: { ...process.env, ...GIT_ENV, HOME: home, USERPROFILE: home }, encoding: 'utf8' });
   return { code: cmd.status, out: `${cmd.stdout}${cmd.stderr}`, home };
 }
 const read = (repo, rel) => fs.readFileSync(path.join(repo, rel), 'utf8');
@@ -171,7 +171,7 @@ await test('角色卡：改过的进 state/roles、原文件回 HEAD；未跟踪
 
 await test('仿真提示词：只改了 prefix → 覆盖文件 = 用户的 prefix，原文件回 HEAD', async () => {
   const repo = makeRepo(path.join(BASE, 'preset'));
-  const { renderPresetPromptYaml, extractPresetPrefix } = await import(path.join(DEV, 'src', 'preset-prompt.js'));
+  const { renderPresetPromptYaml, extractPresetPrefix } = await import(pathToFileURL(path.join(DEV, 'src', 'preset-prompt.js')).href);
   const rel = 'dsh/agent-presets/qq-chat-v2/agent.cordis.yml';
   const userPrefix = presetPrefix('99. 用户在控制台里加的一条规则');
   fs.writeFileSync(path.join(repo, rel), renderPresetPromptYaml(read(repo, rel), userPrefix, 'v2'));
@@ -187,7 +187,7 @@ await test('仿真提示词：只改了 prefix → 覆盖文件 = 用户的 pref
 
 await test('仿真提示词：prefix 以外也改了 → 停下，什么都没动', async () => {
   const repo = makeRepo(path.join(BASE, 'preset-other'));
-  const { renderPresetPromptYaml } = await import(path.join(DEV, 'src', 'preset-prompt.js'));
+  const { renderPresetPromptYaml } = await import(pathToFileURL(path.join(DEV, 'src', 'preset-prompt.js')).href);
   const rel = 'dsh/agent-presets/qq-chat-v2/agent.cordis.yml';
   let text = renderPresetPromptYaml(read(repo, rel), presetPrefix('99. 加一条'), 'v2');
   text = text.replace("name: '@deepseek-ai/dsh-persona'", "name: '@someone/else'");
@@ -266,7 +266,7 @@ await test('覆盖层里已有内容不同的同名角色卡 → 停下', () => 
 
 await test('中途失败 → 已改的全部还原', async () => {
   const repo = makeRepo(path.join(BASE, 'midfail'));
-  const { renderPresetPromptYaml } = await import(path.join(DEV, 'src', 'preset-prompt.js'));
+  const { renderPresetPromptYaml } = await import(pathToFileURL(path.join(DEV, 'src', 'preset-prompt.js')).href);
   const rel = 'dsh/agent-presets/qq-chat-v2/agent.cordis.yml';
   fs.writeFileSync(path.join(repo, rel), renderPresetPromptYaml(read(repo, rel), presetPrefix('99. 加一条'), 'v2'));
   fs.writeFileSync(path.join(repo, 'roles/A.md'), '改过\n');
@@ -309,7 +309,7 @@ await test('U6：没字段 + 非空 rag.sqlite3 → 写 true，其它键、缩�
   assert.equal(r.code, 0, r.out);
   const expected = { ...original, memoryRag: { ...original.memoryRag, enabled: true } };
   assert.equal(read(repo, 'config.json'), `${JSON.stringify(expected, null, 2)}\n`);
-  assert.equal(mode(path.join(repo, 'config.json')), '640');
+  if (process.platform !== 'win32') assert.equal(mode(path.join(repo, 'config.json')), '640');
   assert.match(r.out, /memoryRag\.enabled = true/);
   const uj = JSON.parse(read(repo, 'state/upgrade.json'));
   assert.ok(uj.migrations['rag-enabled-fix']);
@@ -324,7 +324,7 @@ await test('U6：没有 memoryRag 对象、4 空格缩进 → 补上对象，缩
   const repo = u6Repo('u6-indent', `${JSON.stringify({ a: 1 }, null, 4)}\n`, { mode: 0o600 });
   assert.equal(runMigrate(repo, []).code, 0);
   assert.equal(read(repo, 'config.json'), `${JSON.stringify({ a: 1, memoryRag: { enabled: true } }, null, 4)}\n`);
-  assert.equal(mode(path.join(repo, 'config.json')), '600');
+  if (process.platform !== 'win32') assert.equal(mode(path.join(repo, 'config.json')), '600');
 });
 
 await test('U6：没有库 / 空库 → 不写 config.json', () => {
@@ -362,7 +362,7 @@ await test('--dry-run 不改任何文件（首次迁移与 U6 都是）', () => 
 
 await test('权限：新建的目录 700、文件 600（umask 000 下也一样）', async () => {
   const repo = makeRepo(path.join(BASE, 'perms'));
-  const { renderPresetPromptYaml } = await import(path.join(DEV, 'src', 'preset-prompt.js'));
+  const { renderPresetPromptYaml } = await import(pathToFileURL(path.join(DEV, 'src', 'preset-prompt.js')).href);
   const rel = 'dsh/agent-presets/qq-chat-v2/agent.cordis.yml';
   fs.writeFileSync(path.join(repo, rel), renderPresetPromptYaml(read(repo, rel), presetPrefix('99. 加一条'), 'v2'));
   fs.writeFileSync(path.join(repo, 'roles/A.md'), '改过\n');
@@ -372,16 +372,16 @@ await test('权限：新建的目录 700、文件 600（umask 000 下也一样�
   const r = runMigrate(repo, ['--first-run', '--yes'], { umask: '000' });
   assert.equal(r.code, 0, r.out);
   for (const d of ['state', 'state/roles', 'state/preset-overrides', 'state/long-memory', 'state/long-memory/rag']) {
-    assert.equal(mode(path.join(repo, d)), '700', d);
+    if (process.platform !== 'win32') assert.equal(mode(path.join(repo, d)), '700', d);
   }
   for (const f of ['state/roles/A.md', 'state/roles/hidden.json', 'state/preset-overrides/qq-chat-v2.prefix.md',
     'state/long-memory/rag/config.local.yml', 'state/upgrade.json']) {
-    assert.equal(mode(path.join(repo, f)), '600', f);
+    if (process.platform !== 'win32') assert.equal(mode(path.join(repo, f)), '600', f);
   }
   const backup = JSON.parse(read(repo, 'state/upgrade.json')).firstRun.backup;
-  assert.equal(mode(backup), '700');
-  assert.equal(mode(path.join(backup, 'manifest.json')), '600');
-  assert.equal(mode(path.join(backup, 'files/roles/A.md')), '600');
+  if (process.platform !== 'win32') assert.equal(mode(backup), '700');
+  if (process.platform !== 'win32') assert.equal(mode(path.join(backup, 'manifest.json')), '600');
+  if (process.platform !== 'win32') assert.equal(mode(path.join(backup, 'files/roles/A.md')), '600');
 });
 
 console.log(`\n${failed ? `${failed} 个失败` : '全部通过'}（${passed} 通过）`);

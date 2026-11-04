@@ -32,7 +32,8 @@ const author = path.join(base, 'author');
 const user = path.join(base, 'user');
 const home = path.join(base, 'home');
 const fake = path.join(base, 'bin');
-const tmp = path.join(base, 'tmp');
+// Windows 上测试保险只认系统临时目录，所以把 TEMP 设成 base 本身，仓库才算在它下面。
+const tmp = process.platform === 'win32' ? base : path.join(base, 'tmp');
 const log = path.join(base, 'cmd.log');
 for (const d of [home, fake, tmp]) fs.mkdirSync(d, { recursive: true });
 fs.writeFileSync(log, '');

@@ -116,9 +116,9 @@ await test('权限：state/roles/ 700、卡片 600、hidden.json 600', () => {
   const f = fixture('perm');
   f.store.write('甲', 'x\n');
   f.store.remove('乙');
-  assert.equal(fs.statSync(path.join(f.stateDir, 'roles')).mode & 0o777, 0o700);
-  assert.equal(fs.statSync(path.join(f.stateDir, 'roles', '甲.md')).mode & 0o777, 0o600);
-  assert.equal(fs.statSync(path.join(f.stateDir, 'roles', 'hidden.json')).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(f.stateDir, 'roles')).mode & 0o777, 0o700);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(f.stateDir, 'roles', '甲.md')).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(f.stateDir, 'roles', 'hidden.json')).mode & 0o777, 0o600);
   // 原子写不留临时文件
   assert.deepEqual(fs.readdirSync(path.join(f.stateDir, 'roles')).filter((n) => n.endsWith('.tmp')), []);
 });

@@ -167,7 +167,7 @@ await test('有更新：取 CHANGELOG、生成 notes（只含当前版本之后�
   assert.doesNotMatch(n2.summary, /restart/);
   assert.deepEqual([...st.upgrade.restart].sort(), ['bridge', 'memory-rag']);
   assert.equal(st.upgrade.setupDsh, true);
-  assert.equal(st.command, 'bash scripts/update.sh');
+  assert.equal(st.command, (process.platform === 'win32' ? 'update.bat' : 'bash scripts/update.sh'));
   assert.equal(st.checkedAt, '2026-11-02T00:00:00.000Z');
   assert.equal(fetch.calls.length, 2);
   assertAllowed(fetch.calls);
