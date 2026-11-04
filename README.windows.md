@@ -150,6 +150,8 @@ start-all.bat --rag
 2. 打开 `cmd`，`cd` 到项目目录，手动运行 `start-all.bat`，把输出发出来；
 3. 看 `%USERPROFILE%\.ai-companion-run\start-all.log`，这份日志每次运行都会写。
 
+从老版本升级，最省事的办法是把 [AI 升级手册](docs/guides/AI_UPGRADE.md) 发给 AI，它会判断情况、备份、升级和验证。
+
 老的 `windows-native` 分支已经合进 `main` 并删除。之前从那个分支 clone 的，运行一次：
 
 ```bat

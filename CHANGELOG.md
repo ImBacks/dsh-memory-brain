@@ -6,7 +6,7 @@
 
 **v0.5.1 及更早的版本都要先跑一次**（2026-11-04 整理过一次提交历史，文件内容没变、提交号变了，旧的升级脚本会报「连不上 origin」）。Windows 和其它情况的命令见 [README](README.md#-升级到新版本)。
 
-Linux 在项目目录里执行这两条命令：
+最省事的办法是把 [AI 升级手册](docs/guides/AI_UPGRADE.md) 发给 AI，让它代你做。想自己来，Linux 在项目目录里执行这两条命令：
 
 ```bash
 git fetch origin && git checkout origin/main -- scripts/update.sh scripts/update.mjs scripts/lib/upgrade-common.mjs

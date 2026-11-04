@@ -87,6 +87,8 @@ xcopy "%USERPROFILE%\.dsh\plugins" "%BK%\plugins" /E /I /H /Y
 
 ## 3. 安装/更新本项目
 
+> 用户已经装过老版本：不要走这一节，按 [老用户升级手册](AI_UPGRADE.md) 做。
+
 ```bat
 git clone https://github.com/y083245/dsh-memory-brain.git
 cd dsh-memory-brain

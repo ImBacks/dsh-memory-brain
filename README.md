@@ -366,6 +366,14 @@ update.bat
 
 ### v0.5.1 及更早的老用户：先跑一次
 
+**最省事的办法：交给 AI。** 把下面这段话发给能在你电脑上运行命令的 AI（Claude Code、Codex 等），它会按[手册](docs/guides/AI_UPGRADE.md)判断你的情况、备份、升级和验证，ZIP 安装的也能处理：
+
+```text
+请读 https://raw.githubusercontent.com/y083245/dsh-memory-brain/main/docs/guides/AI_UPGRADE.md ，按里面的步骤帮我把这台机器上的 dsh-memory-brain（qq-bridge）升级到最新版。动手前先告诉我你查到的情况和打算怎么做，等我确认。
+```
+
+想自己来，就按下面的步骤：
+
 2026-11-04 仓库整理过一次提交历史（文件内容没变，提交号变了），旧的升级脚本跟不上，会报「连不上 origin」。在项目目录里执行，只需要这一次：
 
 **🐧 Linux：**
