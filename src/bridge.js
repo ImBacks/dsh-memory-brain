@@ -10369,6 +10369,12 @@ async function main() {
   }
 
   function sendMessagesV2(key, messages, delays, replyToMessageId, atUserId = null) {
+    // onebotSend 是逐条查的：每段都短于片段窗口时，逐条都不命中，拼起来却是完整令牌。
+    // 所以先按整批拼接查一次，命中就一条都不发，也不走条间间隔。
+    if (hasKnownTokenFragment(messages.join(''))) {
+      log(`发送内容包含会话令牌，已阻止发送 (${key})`);
+      return Promise.reject(new Error('发送内容包含会话令牌，已阻止发送'));
+    }
     let sendChain = sendChainFor(key);
     const assertSendAllowed = captureSendGuard(key, { ai: true });
     const [kind, id] = key.split(':');

@@ -58,20 +58,20 @@ CI 的 macOS job 上出现过一次：`test_forget_key_removes_l2_and_leaves_gro
 
 本次改动都在分支上。线上切到这份代码要单独做（`stop-all.sh` 语义没变，但 `start-all.sh` 已是 Node 编排），需要你决定时间，重启前我会再问。
 
-## 7. v0.5.1 还没发布：待修的 CI 偶发失败
+## 7. v0.5.1：R17 偶发失败的结论
 
-**现状**：`v0.5.0` 已发布，但它把 21 个 macOS 元数据文件（`._*`，每个 163 字节，只有 `com.apple.provenance` 属性，没有个人信息，不影响运行）带进了仓库，也没跑通上游带来的 `CI` 工作流。修复都在分支 `release/v0.5.1` 上（程序行为没变，不用重启服务），**还没有合进 `main`，也没打标签**。
+**现象**：`CI / 离线回归（test:audit）`（`windows-latest`，Node 22）偶发 `FAIL R17 … Error: request hung`，只见过一次（run `41772778282`）。
 
-**剩下的一个红项（没有修，留给单独的窗口）**
+**原因**：是测试的 15 秒客户端超时，桥接没有卡死。R17 用默认配置走随机发送间隔，三段消息有两个间隔；两个都抽到 5～10 秒的长间隔（概率 20% × 20%）且合计超过 15 秒（约一半）时就超时，每次运行约 2%。把长间隔固定成 10 秒可以稳定复现，放宽超时后响应是正常的 500。和 Windows 无关。
 
-- **现象**：`CI / 离线回归（test:audit）`（`windows-latest`，Node 22）失败，`Audit suite: 56/57`。
-- **报错**：`scripts/test-audit-regressions.mjs` 的 `FAIL R17 拆成两条发送的会话令牌同样被拦截 — Error: request hung`。
-- **是偶发**：提交 `440e3de` 上同一个 job 是 57/57；之后的 `9b703ff` 只改了 `scripts/ci-dsh-compat.mjs`，这个测试用不到它。至今只见过这一次。
-- **日志**：`gh run view 41772778282 -R y083245/dsh-memory-brain`，job `126386090447`。
-- **还没查**：`request hung` 是测试 harness 给请求设的超时，还是桥接那边真的没回；R17 这条路径（拆成两条发送的令牌拦截）是上游的代码，合并时 `src/bridge.js` 这一带有过冲突。它拦不拦得住令牌关系到安全，不要只靠重跑过关。
+**顺带查出的真问题**：闸门函数和 R17 都与上游一致，不是合并带来的，但有两处缺口：
 
-**修完后的发布步骤**
+- `onebotSend` 逐条检查令牌片段，所以同一次调用里切得够碎的令牌能发出去。已改成 `sendMessagesV2` 先按整批拼接检查，命中就一条都不发，也不走间隔。
+- R17 的「没有片段发出」断言查的是 `calls.sent`，这条路径走 OneBot HTTP，不写它，断言一直是空转。已改查 `calls.http`。
 
-1. `release/v0.5.1` 上 **`CI` 和 `test` 两条工作流都要绿**（别只看 `test`，v0.5.0 就是这样漏的）。
-2. `main` 和 `windows-native` 快进到同一提交，打附注标签 `v0.5.1`，建 GitHub Release，删掉 `release/v0.5.1`。
-3. 推之前确认 `git ls-files | grep -E '(^|/)\._'` 为空。在 Mac 上打包传文件要设 `COPYFILE_DISABLE=1`。
+R17 现在把长间隔固定成 10 秒：闸门一旦退回逐条检查，就会稳定失败，不再是 2% 的偶发。
+
+**发版时注意**
+
+1. `CI` 和 `test` 两条工作流都要绿（别只看 `test`，v0.5.0 就是这样漏的）。
+2. 推之前确认 `git ls-files | grep -E '(^|/)\._'` 为空。在 Mac 上打包传文件要设 `COPYFILE_DISABLE=1`。

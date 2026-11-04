@@ -105,8 +105,13 @@ await test('R1 无令牌智能体调用：closed-agent 可发送/探测，v2 面
 // 两条消息，两条各自都不含完整 token，闸门就全部落行 —— 而拆条恰好是这个桥接
 // **鼓励**的行为（SPACE_SPLIT_HINT：想分多条消息时用空格分隔）。QQ 上拼起来就是完整令牌。
 // 这里把「拆分也必须拦住」钉成断言。
-await test('R17 拆成两条发送的会话令牌同样被拦截', async () => {
-  const h = await bridgeHarness();
+//
+// 间隔固定成最长：闸门必须在任何发送间隔之前生效。以前逐条检查、条间照睡，默认配置下三段
+// 有约 2% 的概率抽到两个长间隔（合计超过 15 秒），表现成偶发的 request hung。
+await test('R17 拆成多条发送的会话令牌同样被拦截', async () => {
+  const h = await bridgeHarness({
+    config: { socialV2: { send: { longGapProbability: 1, longGapMinMs: 10000, longGapMaxMs: 10000 } } }
+  });
   try {
     h.setMode('reserved2');
     const st = h.getSocialV2State('group:456');
@@ -133,11 +138,17 @@ await test('R17 拆成两条发送的会话令牌同样被拦截', async () => {
         method: 'POST', token, body: { key: 'group:456', messages: pieces }
       });
       assert.equal(spaced.status, 500, `分段发送的令牌必须被拦，实际 ${spaced.status} ${spaced.body}`);
+
+      // 每段都短于 12 字符的片段窗口：逐条看都不命中，拼起来就是完整令牌。
+      const short = await call(port, '/api/socialV2/send-message', {
+        method: 'POST', token, body: { key: 'group:456', messages: token.match(/.{1,11}/g) }
+      });
+      assert.equal(short.status, 500, `每段都很短的令牌必须被拦，实际 ${short.status} ${short.body}`);
     });
 
-    // 出站侧也确认：没有任何一条真的发到了 QQ。
-    const leaked = h.calls.sent.filter((m) => m.text && token.includes(String(m.text).slice(0, 12)));
-    assert.equal(leaked.length, 0, `不得有任何令牌片段发出：${JSON.stringify(leaked)}`);
+    // 出站侧也确认：没有任何一条真的发到了 QQ。这条路径走 OneBot HTTP，不经过 calls.sent。
+    const leaked = h.calls.http.filter((c) => /\/send_(group|private)_msg$/.test(c.url));
+    assert.equal(leaked.length, 0, `不得有任何令牌片段发出，实际发出 ${leaked.length} 条`);
   } finally { await h.close(); }
 });
 
