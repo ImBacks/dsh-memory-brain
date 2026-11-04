@@ -62,7 +62,7 @@
 - 一个 **DeepSeek API 密钥**：到 [platform.deepseek.com](https://platform.deepseek.com) 注册、充值几块钱、创建 API Key（形如 `sk-...`，只显示一次，先存好）。桌面版也可以直接登录 DeepSeek 账号
 - （可选）一张 **10 GB 显存以上的 NVIDIA 显卡**，用来在本地跑记忆服务的 embedding；没有也没关系，可以用云端 API，或者先不开记忆服务
 
-> **版本说明**：作者实际跑通全链路的组合是 **SnowLuma 2.2.0**（Linux 配 QQ 3.2.32，Windows 配 QQNT 9.9）。更新的 SnowLuma（目前到 2.4.0）读配置和启动的方式已核对过、不用改代码，但还没有真正注入 QQ 验证过，见[真机复现清单](docs/guides/REAL_DEVICE_CHECKLIST.md)。DSH 由 CI 在 Linux、Windows 上持续核对：0.2.1-rc.3、latest、alpha。
+> **版本说明**：实际跑通全链路的组合是 **SnowLuma 2.2.0**（Linux 配 QQ 3.2.32，Windows 配 QQNT 9.9）。更新的 SnowLuma（目前到 2.4.0）读配置和启动的方式已核对过、不用改代码，但还没有真正注入 QQ 验证过，见[真机复现清单](docs/guides/REAL_DEVICE_CHECKLIST.md)。DSH 由 CI 在 Linux、Windows 上持续核对：0.2.1-rc.3、latest、alpha。
 
 ---
 
