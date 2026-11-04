@@ -109,7 +109,17 @@ try {
     for (const line of diagnosePresetProfile({ home: process.env.DSH_HOME, profile })) console.error(`  ${line}`);
   } else {
     const api = new NodeApiClient(base, undefined, {});
-    const created = unwrap(await api.sessions.create({ cwd: home, agentPreset: 'qq-chat-v2' }), 'session.create');
+    // 预设清单先于 sessionController 就绪：启动期内的 service-unavailable 不算失败，别的错误立刻报。
+    let created;
+    for (;;) {
+      try {
+        created = unwrap(await api.sessions.create({ cwd: home, agentPreset: 'qq-chat-v2' }), 'session.create');
+        break;
+      } catch (error) {
+        if (!/service-unavailable/.test(String(error?.message ?? error)) || Date.now() >= deadline) throw error;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
     console.log(`session/create qq-chat-v2: ${created.sessionId ?? JSON.stringify(created).slice(0, 80)}`);
   }
 } catch (error) {
