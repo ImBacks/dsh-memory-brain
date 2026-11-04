@@ -17,7 +17,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { checkNodeVersion, mirrorOutputToLog } from './lib/entry-guard.mjs';
+import { MIN_NODE_VERSION, checkNodeVersion, mirrorOutputToLog } from './lib/entry-guard.mjs';
+import { planStartNode } from '../src/runtime/node-select.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -41,8 +42,42 @@ function installDependencies() {
   return true;
 }
 
+/**
+ * 当前 node 不合适、nvm 里有合适的，就用那个 node 把本脚本再跑一遍，返回它的退出码；不用换返回 null。
+ * 换完后 process.execPath 和 PATH 都对了，npm ci、setup-dsh、DSH、SnowLuma、桥接拿到的是同一个 node。
+ */
+function rerunWithBetterNode() {
+  if (process.env.QQB_NODE_SWITCH_NOTE !== undefined) return null; // 已经换过一次，不再换
+  let target = null;
+  try {
+    target = planStartNode({ root: ROOT, entryMin: MIN_NODE_VERSION });
+  } catch (error) {
+    console.error(`[start] 检查 node 版本时出错，继续用当前的 node：${error?.message ?? error}`);
+  }
+  if (!target) return null;
+  const r = spawnSync(target.path, process.argv.slice(1), {
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      PATH: `${path.dirname(target.path)}${path.delimiter}${process.env.PATH ?? ''}`,
+      QQB_NODE_SWITCH_NOTE: target.note
+    }
+  });
+  if (r.error) {
+    console.error(`[start] 换不到 ${target.path}（${r.error.message}），继续用当前的 node`);
+    return null;
+  }
+  return r.status ?? 1;
+}
+
 async function main() {
+  const rerunStatus = rerunWithBetterNode();
+  if (rerunStatus !== null) return rerunStatus;
+  // 换 node 的说明在子进程里打，才会进 start-all.log（日志文件每次运行都从头写）。
+  const switchNote = process.env.QQB_NODE_SWITCH_NOTE;
+  delete process.env.QQB_NODE_SWITCH_NOTE; // 别让后面拉起的服务继承
   mirrorOutputToLog('start-all');
+  if (switchNote) console.log(`[start] ${switchNote}`);
   if (!checkNodeVersion()) return 1;
   if (!dependenciesInstalled() && !installDependencies()) return 1;
   // 编排器的 import 失败（依赖残缺、Node 太旧）也要留下可读的报错，不能只闪一下。

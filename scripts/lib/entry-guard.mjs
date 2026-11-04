@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const MIN_NODE = [22, 13];
+export const MIN_NODE_VERSION = MIN_NODE.join('.');
 
 /** 版本太旧时直接说清楚，别让用户去猜后面某个 import 的报错。 */
 export function checkNodeVersion(version = process.versions.node, print = console.error) {

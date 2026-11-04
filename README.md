@@ -415,6 +415,7 @@ git switch main
 | 她回「agent 处理出错」 | DSH 没配好 DeepSeek 密钥或余额不足，检查 DSH 的「模型」页 |
 | 日志出现 `session/model-unavailable` | DSH 里还没有可用模型（没登录账号 / 没填 API Key），或 `dsh.provider` 写死了当前 DSH 没有的值。保持 `"auto"` 会跟随 DSH 的默认模型 |
 | Linux 上 SnowLuma 接入 QQ 失败 | 多半是 QQ 版本和 SnowLuma 不配（2.2.0 要配 3.2.32），或者 Node 没有 `setcap` 权限（升级 Node 后要重新做） |
+| ssh 命令、cron 里跑 `start-all.sh` 报 node 版本不够 | 这类非交互 shell 不加载 nvm。脚本会自动去 `~/.nvm` 里找合适的 node；找不到就 `nvm install 24`，用别的版本管理器的话设 `NODE_BIN=/path/to/node`（或 `config.json` 的 `orchestrator.nodeBin`） |
 | 一直「等待 SnowLuma 的 OneBot 服务」 | SnowLuma 还没注入 QQ，或 OneBot 的 HTTP（3000）/ WebSocket（3001）没启用；SnowLuma 2.3 及以上第一次运行要先在 WebUI 同意协议；端口不同就改 `config.json` 的 `snowluma.httpUrl` / `wsUrl` |
 | QQ 已登录，但 OneBot 3000 / 3001 不起 | SnowLuma 默认不挂已经在运行的 QQ：先退出 QQ 再启动 SnowLuma，或启动前设 `SNOWLUMA_HOOK_AUTOLOAD=1`、在 WebUI 打开自动注入 |
 | 日志出现 `SnowLuma 错误：{}` / `1006` | 正常现象：首次连接时桥接在自动修正 WebSocket 令牌，随后会显示「已连接」 |

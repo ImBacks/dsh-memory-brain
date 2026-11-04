@@ -26,6 +26,7 @@ import {
 } from './process.mjs';
 import { isEmbeddingManaged, readRagEnabled, writeRagEnabled } from './rag-config.mjs';
 import { resolveOrchestratorPaths } from './paths.mjs';
+import { dshNodeRequirement, hasPtraceCap, nodeVersionProblem } from './node-select.mjs';
 import { REQUIRED_PRESETS, checkDshModels, checkDshPresets, describeEndpoint, diagnosePresetProfile, modelSetupHint, resolveDshEndpoint } from '../dsh-discovery.js';
 import { discoverSnowLumaConnection, persistSnowLumaEndpoint } from '../snowluma-conn.js';
 import { locateSnowLumaHomes, probeOneBotWs, processChainForPort } from './snowluma-locate.mjs';
@@ -554,11 +555,7 @@ async function startQq({ paths, log, ok, err, platform }) {
 
 async function checkSnowLumaCap(nodeBin, { err, platform = process.platform }) {
   if (platform === 'win32') return true;
-  try {
-    const real = fs.realpathSync(nodeBin);
-    const r = await execFileP('getcap', [real], { timeout: 5000 });
-    if (String(r.stdout ?? '').includes('cap_sys_ptrace')) return true;
-  } catch { /* 下面统一报错 */ }
+  if (hasPtraceCap(nodeBin)) return true;
   err('node 缺少 cap_sys_ptrace，SnowLuma 无法注入 QQ。先执行：');
   try {
     const real = fs.realpathSync(nodeBin);
@@ -567,6 +564,33 @@ async function checkSnowLumaCap(nodeBin, { err, platform = process.platform }) {
     err(`  sudo setcap cap_sys_ptrace=ep "${nodeBin}"`);
   }
   return false;
+}
+
+/**
+ * 起任何服务之前查一遍 node：只查这次真要起的服务。要等 DSH、QQ 都起来才发现 SnowLuma 不能用，
+ * 用户就得面对一堆半启动的进程。
+ */
+export async function checkNodeForServices({
+  paths,
+  platform = process.platform,
+  warn,
+  err,
+  portOpen = isPortOpen,
+  capCheck = checkSnowLumaCap
+}) {
+  let good = true;
+  if (!(await portOpen(DSH_PORT))) {
+    const requirement = dshNodeRequirement(paths);
+    const problem = nodeVersionProblem({ paths, requirement });
+    if (problem.length && requirement.strict) {
+      for (const line of problem) err(line);
+      good = false;
+    } else if (problem.length) {
+      warn(problem[0]);
+    }
+  }
+  if (!(await portOpen(SNOW_PORT)) && !(await capCheck(paths.nodeBin, { err, platform }))) good = false;
+  return good;
 }
 
 /**
@@ -1219,6 +1243,7 @@ export async function runStart({
     err(`找不到 SnowLuma 目录：${paths.snowDir || '(空)'}。可用 SNOW_DIR 或 config.json 的 orchestrator.snowDir 指定`);
     return 1;
   }
+  if (!(await checkNodeForServices({ paths, platform, warn, err }))) return 1;
   ok(`node: ${paths.nodeBin}`);
   ok(`日志目录: ${paths.runDir}`);
 

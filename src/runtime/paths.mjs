@@ -213,6 +213,7 @@ export function resolveOrchestratorPaths({
   const embedBin = pick('EMBED_BIN', 'embedBin', defaultEmbedBin({ platform, home, fsImpl }));
   const embedModel = pick('EMBED_MODEL', 'embedModel', path.join(home, 'models', 'Qwen3-Embedding-8B-Q8_0.gguf'));
   const rawNodeBin = pick('NODE_BIN', 'nodeBin', execPath);
+  const nodeBinExplicit = Boolean(pick('NODE_BIN', 'nodeBin', ''));
   const nodeBin = path.isAbsolute(rawNodeBin) ? rawNodeBin : (findExecutable(rawNodeBin, { env, platform, fsImpl }) || rawNodeBin);
   const pnpmHome = env.PNPM_HOME || path.join(home, platform === 'win32' ? 'AppData' : '.local', platform === 'win32' ? 'Local' : 'share', 'pnpm');
   const pnpmCandidates = platform === 'win32'
@@ -234,15 +235,15 @@ export function resolveOrchestratorPaths({
   let dshCommand;
   const custom = Array.isArray(oc.dshCommand) ? oc.dshCommand.filter((item) => typeof item === 'string' && item.trim()) : [];
   if (custom.length) {
-    dshCommand = { command: custom[0], args: custom.slice(1), cwd: isDir(dshDir, fsImpl) ? dshDir : root };
+    dshCommand = { kind: 'custom', command: custom[0], args: custom.slice(1), cwd: isDir(dshDir, fsImpl) ? dshDir : root };
   } else if (isFile(path.join(dshDir, 'package.json'), fsImpl)) {
-    dshCommand = { command: pnpmBin, args: ['dsh', 'web', '--no-open'], cwd: dshDir };
+    dshCommand = { kind: 'source', command: pnpmBin, args: ['dsh', 'web', '--no-open'], cwd: dshDir };
   } else {
     // 全局安装 / 桌面版自带的 dsh CLI（Windows 上通常是 dsh.cmd；commandSpec 会解析成
     // node + JS 入口或回退 cmd.exe）。桌面版 API 端口是随机的，桥接只认 3080，
     // 所以这里走 `dsh web` 而不是「让用户打开桌面版 GUI」。
     // `--no-open` 避免每次编排都在浏览器里弹一个窗口。
-    dshCommand = { command: findDshCli({ env, platform, home, fsImpl }) || 'dsh', args: ['web', '--no-open'], cwd: root };
+    dshCommand = { kind: 'cli', command: findDshCli({ env, platform, home, fsImpl }) || 'dsh', args: ['web', '--no-open'], cwd: root };
   }
 
   return {
@@ -262,6 +263,7 @@ export function resolveOrchestratorPaths({
     embedBin,
     embedModel,
     nodeBin,
+    nodeBinExplicit,
     pnpmBin,
     ragDir,
     ragPython: resolvePython({ venvDir: path.join(ragDir, '.venv'), platform, env, fsImpl }),
