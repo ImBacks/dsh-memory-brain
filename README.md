@@ -48,7 +48,7 @@
 
 ## 🚀 部署教程（Linux，第一次大约 1 小时）
 
-> 本教程按作者实际在跑的环境写（Ubuntu + Linux QQ）。[windows教程](https://github.com/y083245/dsh-memory-brain/tree/windows-native)，见 [完整说明](docs/guides/FULL_GUIDE.md)；记忆服务和一键脚本只在 Linux 上测过。
+> Linux 教程按作者实际在跑的环境写（Ubuntu + Linux QQ）。**Windows 已原生支持（不是 WSL）**：DSH 桌面版 / 网页版都能用，装好 SnowLuma 后双击 `start-all.bat` 一键跑通，步骤见下方 [「Windows 原生部署」](#-windows-原生部署)。
 >
 > 下面所有命令都在**终端**里输入（Ubuntu 按 `Ctrl + Alt + T` 打开）。`#` 开头的是说明，不用输入。
 
@@ -239,8 +239,8 @@ uv pip install --python .venv/bin/python -e .
 <details>
 <summary><b>点这里展开</b></summary>
 
-- `./start-all.sh`：按顺序启动 DSH → QQ → SnowLuma → 本项目；RAG 开关开着时连记忆服务一起起（`--rag` = 只起记忆服务并打开开关；`./stop-all.sh --rag` = 停掉并关上开关）。脚本开头的程序路径是作者本机的，请用 `DSH_DIR`、`SNOW_DIR`、`QQ_BIN` 等环境变量覆盖（可以写进 `~/.bashrc`）；**不要直接改脚本**，否则升级时 `scripts/update.sh` 会因为「有本地改动」停下来。
-- `scripts/systemd/install.sh`：把本项目和记忆服务装成 systemd 用户服务，崩溃自动拉起；加 `--enable` 开机自启（QQ 仍需人工扫码登录）。
+- `./start-all.sh`：按顺序启动 DSH → QQ → SnowLuma → 本项目；RAG 开关开着时连记忆服务一起起（`--rag` = 只起记忆服务并打开开关；`./stop-all.sh --rag` = 停掉并关上开关）。实现在 `scripts/start-all.mjs` / `stop-all.mjs`（Windows 用 `start-all.bat` / `stop-all.bat`，流程不同，见下一节）；程序路径可用 `DSH_DIR`、`SNOW_DIR`、`QQ_BIN` 等环境变量或 `config.json` 的 `orchestrator` 段覆盖。
+- `scripts/systemd/install.sh`（**仅 Linux**）：把本项目和记忆服务装成 systemd 用户服务，崩溃自动拉起；加 `--enable` 开机自启（QQ 仍需人工扫码登录）。Windows 没有 systemd，改用 PID 文件管理，见下一节。
 
 </details>
 
@@ -265,6 +265,120 @@ git fetch origin && git checkout origin/main -- scripts/update.sh
 
 ---
 
+## 🪟 Windows 原生部署
+
+> 这一节是 **Windows 10/11 原生（不是 WSL）**的步骤。Linux 的 systemd 部署不受影响。
+>
+> 📄 简版说明（逐步操作和常见问题）：[README.windows.md](README.windows.md)
+> 🤖 让 AI 代部署：把 [docs/guides/WINDOWS_AI_DEPLOY.md](docs/guides/WINDOWS_AI_DEPLOY.md) 发给它。
+> 🧰 每个服务单独开窗口手动起：[docs/guides/WINDOWS_MANUAL_DEPLOY.md](docs/guides/WINDOWS_MANUAL_DEPLOY.md)
+
+一句话流程：**装好 DSH → 用 SnowLuma 注入 QQ 并开好 OneBot → 双击 `start-all.bat`**。
+
+### 0. 准备清单
+
+- Windows 10/11（x64），有桌面会话（QQ 要登录）
+- **Node.js 22.13+（建议 24）**：<https://nodejs.org/>，自带 npm
+- **DeepSeek Harness（DSH）**：**桌面版**或**网页版**（`npm install -g @deepseek-ai/dsh@0.2.1-rc.3`）二选一，都支持
+- 一个**专门给 AI 用的 QQ 小号**（不要用大号）+ QQNT
+- **SnowLuma**：自己到 [SnowLuma Releases](https://github.com/SnowLuma/SnowLuma/releases) 下载 Windows 包，解压到任意目录
+- （可选）Python 3.12 + [uv](https://docs.astral.sh/uv/)（记忆服务 memory-rag）；10 GB 以上显存的 NVIDIA 显卡（本地 embedding）
+
+### 1. DSH：桌面版、网页版都行
+
+| | 桌面版 | 网页版 `dsh web` |
+|---|---|---|
+| API 地址 | 每次启动**随机端口**，桥接按进程自动找到 | 固定 <http://127.0.0.1:3080> |
+| 模型 | 在桌面版里登录 DeepSeek 账号或填 API Key | 浏览器打开 3080 →「设置 → 模型」 |
+| profile | `%USERPROFILE%\.dsh\profiles\desktop` | `%USERPROFILE%\.dsh\profiles\web` |
+
+- `start-all.bat` 默认自动挑：**桌面版开着就用桌面版，否则用 / 启动 `dsh web`**（装了桌面版时用它自带的 dsh）。
+  固定一个：`start-all.bat --desktop` / `start-all.bat --web`，或 `config.json` 的 `dsh.target`（`auto` / `desktop` / `web`）。
+- QQ 预设和 MCP 会**同时装进两个 profile**，随时换版本都不用重装；`dsh.provider` 默认 `auto`，跟随当前 DSH 的默认模型。
+- 桥接运行中重启 / 切换 DSH（端口变了）也会自动重新发现并重连。
+
+### 2. 用 SnowLuma 注入 QQ（自己操作）
+
+1. 用小号登录 QQNT。
+2. 打开 SnowLuma（`launcher.bat` 或 `SnowLuma.exe`），进 WebUI（一般 <http://127.0.0.1:5099>），按引导完成设置并**注入 QQ**。
+3. 在 OneBot 网络配置里确认 **HTTP 服务端（3000）**和 **WebSocket 服务端（3001）都已启用**——收消息走 WebSocket，发消息和 MCP 工具走 HTTP。
+
+> QQ 先登录、SnowLuma 后启动时，SnowLuma 默认不会去挂已经在运行的 QQ：先退出 QQ 再启动 SnowLuma，
+> 或在 WebUI 里打开自动注入。token 不用手抄，下一步会自动找。
+
+### 3. 安装本项目并一键启动
+
+```bat
+git clone https://github.com/y083245/dsh-memory-brain.git
+cd dsh-memory-brain
+start-all.bat
+```
+
+`start-all.bat` 依次：
+
+1. 没装依赖就自动 `npm ci`；
+2. 没有 `config.json` 就从示例生成，并在窗口里**问你的 QQ 号**（设为管理员并加进私聊白名单）；
+3. 把 QQ 预设 / MCP 装进 DSH 的 `web` 和 `desktop` profile；DSH 正开着且需要重启才能加载时，会问你是否自动重启；
+4. 连上 DSH，并检查有没有可用模型——没有会直接告诉你去哪里登录账号 / 填 Key；
+5. 等 SnowLuma 的 OneBot 就绪（最多 5 分钟），通过监听 3001 的进程找到 SnowLuma 目录，
+   试出 HTTP / WebSocket 各自能用的 token（两者不同）并写回 `config.json`；
+6. 拉起 qq-bridge，确认「SnowLuma 已连接」和「DSH 已就绪」都出现。
+
+看到 `全部就绪` 后，用你的 QQ 给机器人小号发一条私聊「在吗」，收到回复就成功了。
+控制台：<http://127.0.0.1:3100/>（令牌在 `state\console-token`）。日志在 `%USERPROFILE%\.ai-companion-run\`。
+
+### 4. 停止 / 重启 / 更新
+
+```bat
+stop-all.bat            rem 停桥接（和向量记忆）；QQ、SnowLuma、DSH 都保留
+stop-all.bat --all      rem 连本脚本起的 dsh web 一起停（你自己开的桌面版不会被关）
+stop-all.bat --rag      rem 只停向量记忆并关闭 RAG 开关
+start-all.bat           rem 重新启动，已经在跑的环节自动跳过
+```
+
+更新：`git pull` 后再运行 `start-all.bat`，它会重新同步 DSH 里的预设 / MCP，有改动会提示重启 DSH。
+QQ / SnowLuma 由你自己管理，脚本不启动也不关闭它们（需要旧行为时设 `START_SNOWLUMA=1`）。
+
+> `start.bat` 是旧版「桥接守护」，只负责 `src/bridge.js` 崩溃自动重启；完整一键编排请用 `start-all.bat`。
+> Windows 没有 systemd，所以**没有开机自启**；需要的话用「任务计划程序」在登录时运行 `start-all.bat`
+> （无人值守时设 `QQB_ASSUME_YES=1`，需要重启 DSH 时自动同意）。
+
+### 5. 记忆服务 memory-rag（可选）
+
+```bat
+cd sidecars\memory-rag
+uv venv --python 3.12 .venv
+uv pip install --python .venv\Scripts\python.exe -e .
+cd ..\..
+start-all.bat --rag
+```
+
+或在控制台「API 管理」页打开 RAG 开关。embedding 可以用本地 llama.cpp（`config.json` 的 `orchestrator.embedBin` / `embedModel`，需要 ≥ 10 GB 空闲显存）、自己部署的服务或云端 API；都没有时检索自动只走关键词（BM25）。
+
+### 6. 可覆盖的设置
+
+| 设置 | 作用 |
+|---|---|
+| `config.json` 的 `dsh.target` / `--desktop` / `--web` | 指定连哪个 DSH，默认 `auto` |
+| `config.json` 的 `dsh.provider` / `dsh.model` | 默认 `auto` 跟随 DSH；写具体值则固定 |
+| `config.json` 的 `snowluma.homeDir` | SnowLuma 目录（通常自动发现） |
+| `config.json` 的 `snowluma.httpUrl` / `wsUrl` | OneBot 端口不是 3000 / 3001 时改这里 |
+| `config.json` 的 `snowluma.accessToken` / `wsAccessToken` | HTTP / WebSocket token（通常自动填） |
+| `QQ_BRIDGE_DSH_BIN` | DSH 装在非常规位置时，指向它的 `resources\runtime\cli\bin\dsh.cmd` |
+| `QQ_BRIDGE_NODE_BIN` | 写进 DSH 的 MCP 用哪个 node（默认当前系统 node） |
+| `QQB_ONEBOT_WAIT_SECONDS` | 等 OneBot 的最长秒数，默认 300 |
+
+### 7. Windows 上的测试
+
+```bat
+npm test
+```
+
+会跑跨平台单元测试（自动跳过需要真实 DSH/QQ/浏览器的 e2e），其中 `scripts/test-windows-adapt.mjs` 专门覆盖
+桌面版端口发现、含空格路径、Electron 垫片、全新 / 残缺 DSH profile。Linux 专属的假 systemd 测试会在 Windows 上明确 SKIP。
+
+---
+
 ## ❓ 常见问题
 
 | 现象 | 原因和解决 |
@@ -276,6 +390,11 @@ git fetch origin && git checkout origin/main -- scripts/update.sh
 | 报 HTTP 426 | `httpUrl` 填成了 WebSocket 的端口，改成 HTTP API 的端口 |
 | 「API 管理」页 RAG 显示「部分可用」 | 记忆服务在跑，但 embedding 没起来：看状态后面的原因（显存不足、没装 llama.cpp / 模型、地址或模型名填错）；修好前检索自动只用关键词 |
 | 开了代理（Clash 等 fake-ip 模式）后她看不到图片 | 在代理的 `fake-ip-filter` 里加上 `+.qq.com`、`+.qq.com.cn`、`+.qpic.cn`、`+.gtimg.cn` |
+| Windows `start-all.bat` 一直「等待 SnowLuma 的 OneBot 服务」 | SnowLuma 还没注入 QQ，或 OneBot 的 HTTP（3000）/ WebSocket（3001）服务没启用；端口不同就改 `config.json` 的 `snowluma.httpUrl` / `wsUrl` |
+| Windows 提示「DSH 里还没有可用的模型」 | 桌面版里登录 DeepSeek 账号或填 API Key；网页版浏览器打开 <http://127.0.0.1:3080> 同样操作，填完不用重启 |
+| Windows 控制台 RAG 开关能点但服务没起 | 看 `%USERPROFILE%\.ai-companion-run\memory-rag.log`；确认 `sidecars\memory-rag\.venv\Scripts\python.exe` 存在，或系统里有 `py` / `python` / `python3`。Windows 没有 systemd，开关通过 PID 文件启停 |
+| 日志出现 `session/model-unavailable: Select an available model` | DSH 里还没有可用模型（没登录账号 / 没填 API Key），或 `dsh.provider` 写死了当前 DSH 没有的值。`dsh.provider` 保持 `"auto"` 会跟随 DSH 的默认模型（桌面版通常 `deepseek-account`，网页版常见 `deepseek-official`） |
+| QQ 已登录，但 SnowLuma 日志没有 `login detected`、OneBot 3000/3001 不起 | SnowLuma 默认不挂已经在运行的 QQ：先退出 QQ 再启动 SnowLuma，或启动前 `set SNOWLUMA_HOOK_AUTOLOAD=1` / 在 WebUI 打开自动注入；改 `runtime.json` 的 `hookAutoLoad` 会被 SnowLuma 启动时重置，不要用 |
 
 更多「已知行为」和排查方法见 [完整说明](docs/guides/FULL_GUIDE.md)。
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -52,6 +54,17 @@ class FakeEmbedder:
 T0 = datetime(2026, 10, 1, 20, 0, 0)
 
 
+def is_under_temp(path) -> bool:
+    """路径是否真的在系统临时目录下（Windows runner 的 %TEMP% 可能是 RUNNER~1 短路径，
+    pytest 的 tmp_path 却是 runneradmin 长路径；必须 realpath + normcase 后再比）。"""
+    real = os.path.normcase(os.path.realpath(str(path)))
+    temp = os.path.normcase(os.path.realpath(tempfile.gettempdir()))
+    try:
+        return os.path.commonpath([real, temp]) == temp
+    except ValueError:
+        return False
+
+
 def write_archive(state: Path, key: str, rows: list[tuple], month: str = "2026-10") -> Path:
     """rows: [(分钟偏移, dir, userId, name, text)]，时间以 T0 为起点。"""
     kind, num = key.split(":")
@@ -69,7 +82,7 @@ def write_archive(state: Path, key: str, rows: list[tuple], month: str = "2026-1
 def state(tmp_path: Path) -> Path:
     s = tmp_path / "state"
     (s / "long-memory" / "archive").mkdir(parents=True)
-    (s / "long-memory" / "people.json").write_text(json.dumps({"version": 1, "people": {"111": {"name": "平安"}}}, ensure_ascii=False))
+    (s / "long-memory" / "people.json").write_text(json.dumps({"version": 1, "people": {"111": {"name": "平安"}}}, ensure_ascii=False), encoding="utf-8")
     return s
 
 

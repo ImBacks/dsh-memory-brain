@@ -122,20 +122,25 @@ export async function discoverSnowLumaConnection({
   // 候选顺序：显式配置优先（尊重用户选择），然后才是 per-account 文件里的其它账号
   const candidates = [];
   const seen = new Set();
-  const add = (tk, source, url) => {
+  const add = (tk, source, url, ws = null, file = null) => {
     const key = `${url}|${tk}`;
     if (seen.has(key)) return;
     seen.add(key);
-    candidates.push({ token: tk, source, url });
+    candidates.push({ token: tk, source, url, ws, file });
   };
   if (explicit) add(explicit, 'config/env', base);
   // per-account 文件：同时收 HTTP token（工具用）与 WS 信息（桥接用）。
   // 两个 token 不同、端口也各自记录，不能混用。
-  const wsInfo = new Map();   // uin -> { token, url }
+  // WS 信息必须跟着**同一个文件**走：机器上可能有好几份 SnowLuma（旧版本没删、换了解压目录），
+  // 同一个 QQ 号在每份里的 token 都不一样。以前按 QQ 号存一份、后读的覆盖先读的，
+  // 结果 HTTP 用的是正在运行那份的 token，WS 却拿到旧目录里的 token，start-all 报
+  // 「WebSocket 拒绝了所有候选 token」（2026-11-02 实测）。
+  const wsByUin = new Map();  // uin -> [{ token, url }]：所有目录里该账号的 WS 信息，按目录优先级排
   for (const home of homes) {
     for (const entry of readOneBotTokens(home)) {
-      if (entry.http) add(entry.http.token, `onebot_${entry.uin}.json`, `http://${entry.http.host}:${entry.http.port}`);
-      if (entry.ws?.token) wsInfo.set(entry.uin, { token: entry.ws.token, url: `ws://${entry.ws.host}:${entry.ws.port}` });
+      const ws = entry.ws?.token ? { token: entry.ws.token, url: `ws://${entry.ws.host}:${entry.ws.port}` } : null;
+      if (ws) wsByUin.set(entry.uin, [...(wsByUin.get(entry.uin) ?? []), ws]);
+      if (entry.http) add(entry.http.token, `onebot_${entry.uin}.json`, `http://${entry.http.host}:${entry.http.port}`, ws, entry.file);
     }
   }
   if (!explicit && candidates.length === 0) add('', 'no-token', base);
@@ -147,8 +152,11 @@ export async function discoverSnowLumaConnection({
     if (r.ok) {
       // 找到有效 HTTP token 后，把**同一个账号**的 WS 信息也带回去：
       // 桥接走 WebSocket，用另一个 token、另一个端口 —— 只修 HTTP 的话桥接仍然 1006 重连。
+      // 首选与这个 HTTP token 同一文件里的 WS；其余目录里同账号的 WS 作为备选（wsCandidates）。
       const uin = /onebot_(\d+)\.json/.exec(c.source)?.[1] ?? String(r.data?.user_id ?? '');
-      const w = wsInfo.get(uin) ?? null;
+      const others = wsByUin.get(uin) ?? [];
+      const wsCandidates = [...(c.ws ? [c.ws] : []), ...others.filter((w) => w.token !== c.ws?.token)];
+      const w = wsCandidates[0] ?? null;
       return {
         ok: true,
         token: c.token,
@@ -157,6 +165,9 @@ export async function discoverSnowLumaConnection({
         source: c.source,
         wsToken: w?.token ?? null,
         wsUrl: w?.url ?? null,
+        wsCandidates,
+        // 命中的 token 来自哪份 SnowLuma（<homeDir>/config/onebot_<uin>.json）；显式配置的 token 为 null。
+        homeDir: c.file ? path.dirname(path.dirname(c.file)) : null,
         tried
       };
     }
@@ -194,7 +205,7 @@ export function persistToken(cfgPath, newToken) {
  * 只写传进来的字段，其它配置一律不动；全部一致时不写文件（幂等）。
  * 返回 { updated, changed: {...} }。
  */
-export function persistSnowLumaEndpoint(cfgPath, { accessToken, wsUrl, httpUrl } = {}) {
+export function persistSnowLumaEndpoint(cfgPath, { accessToken, wsAccessToken, wsUrl, httpUrl } = {}) {
   let text = fs.readFileSync(cfgPath, 'utf8');
   // 读的时候必须吃掉 BOM，否则 JSON.parse 会抛「Unexpected token」。
   const hadBom = text.charCodeAt(0) === 0xFEFF;
@@ -210,6 +221,7 @@ export function persistSnowLumaEndpoint(cfgPath, { accessToken, wsUrl, httpUrl }
     next[key] = value;
   };
   consider('accessToken', accessToken);
+  consider('wsAccessToken', wsAccessToken);
   consider('wsUrl', wsUrl);
   consider('httpUrl', httpUrl);
   if (Object.keys(changed).length === 0) return { updated: false, changed: {} };

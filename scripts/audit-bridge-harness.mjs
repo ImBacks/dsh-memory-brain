@@ -42,6 +42,7 @@ import { createDailyReport, isErrorLine, dayOf } from '../src/daily-report.js';
 // APIHUB_PATCH：RAG 总开关与「API 管理」后端（bridge.js 顶层 import，同样要注入）。
 // defaultRagExec 一定要换成下面的替身：真实现会调 `systemctl --user`，在这台机器上会停掉线上 RAG。
 import { createRagControl } from '../src/rag-control.js';
+import { isPortOpen } from '../src/runtime/ports.mjs';
 import { createApiHub, readEmbeddingKind } from '../src/api-hub.js';
 import * as dshCredentials from '../src/dsh-credentials.js';
 // UPGRADE_PATCH：角色卡 / 仿真提示词覆盖层、派生 patch 生成、版本检查（bridge.js 顶层 import，同样要注入；坑 12）。
@@ -253,8 +254,8 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
   const context = vm.createContext({
     fs, os, path, http, crypto, fileURLToPath, URL, Buffer, AbortSignal, console: { log() {}, error() {} },
     fetch: fakeFetch,
-    // 锁文件探测用（bridge.js 顶层的 consolePortInUse）；
-    // 固定桩掉：测试不应该真去 netstat 宿主机。
+    // 锁文件探测用（bridge.js 顶层的 consolePortInUse）；固定桩掉，测试不连宿主机的端口。
+    isPortOpen: async () => false,
     execFileSync: () => '',
     // process 桩要带 env：voice-core / bridge 会读 process.env.FFMPEG_PATH、FFPROBE_PATH 等。
     // 之前只给 pid/platform/kill/exit，导致 `process.env.FFMPEG_PATH` 直接抛 TypeError。
@@ -268,6 +269,10 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
     NodeApiClient: class { constructor() { return api; } },
     SnowLumaWebSocketClient: FakeBot, text: (s) => s,
     discoverDshLaunchToken: () => '', unwrap, createTurnCollector,
+    // DSH 端点发现（src/dsh-discovery.js）：测试里固定为 dsh web，不去扫真实进程。
+    resolveDshEndpoint: async ({ baseUrl }) => ({ baseUrl, kind: 'web' }),
+    describeEndpoint: (endpoint) => String(endpoint?.baseUrl ?? ''),
+    modelSetupHint: () => '',
     createOwnLife, createTtsApi, readLargeJsonBody, createLongMemory,
     createLifeLoop,
     createMemoryRagClient, normalizeDateRange, normalizeKeywords,
@@ -276,7 +281,10 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
     createMemoryDecay,
     createDailyReport, isErrorLine, dayOf,
     // APIHUB_PATCH：RAG 开关 / API 管理 / DSH 凭据（bridge.js 顶层 import；默认 execFile 换替身）。
-    createRagControl, defaultRagExec: fakeRagExec, createApiHub, readEmbeddingKind, dshCredentials,
+    // 这些用例验证的是 systemd / script 编排；显式固定成 Linux，避免在 Windows 宿主上
+    // 选到 PID 进程管理器、绕过假 execFile 的断言。
+    createRagControl: (options = {}) => createRagControl({ ...options, platform: 'linux' }),
+    defaultRagExec: fakeRagExec, createApiHub, readEmbeddingKind, dshCredentials,
     // UPGRADE_PATCH：覆盖层与版本检查（版本检查被 QQB_NO_UPDATE_CHECK=1 关着，fetch 也是上面的记录型替身）。
     createRoleStore, effectivePresetYaml, readOverride, writeOverride, removeOverride, buildPatches, createUpdateCheck,
     // BRAIN_PATCH：globals 里可以覆盖（例如换成回放桩）。

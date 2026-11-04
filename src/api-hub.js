@@ -265,7 +265,9 @@ export function createApiHub({
   now = Date.now,
   // 测试可注入的 web-search 读取器；缺省用真模块（读 config.json，不读任何密钥文件）。
   searchConfigLoader = loadSearchConfig,
-  searchKeyResolver = resolveSearchApiKey
+  searchKeyResolver = resolveSearchApiKey,
+  // 当前连着的 DSH 地址（dsh web 3080 或桌面版的随机端口），控制台「去 DSH 设置」的链接用它。
+  getDshUrl = () => 'http://127.0.0.1:3080'
 } = {}) {
   const hint = (key) => {
     const value = String(key ?? '');
@@ -373,10 +375,10 @@ export function createApiHub({
         keyHint: String(st?.keyHint ?? ''),
         writable: st?.writable !== false,
         reason: st?.reason ?? null,
-        dshUrl: 'http://127.0.0.1:3080'
+        dshUrl: getDshUrl()
       };
     } catch {
-      items.dsh = { hasKey: false, keyHint: '', writable: false, reason: '读不到 DSH 凭据', dshUrl: 'http://127.0.0.1:3080' };
+      items.dsh = { hasKey: false, keyHint: '', writable: false, reason: '读不到 DSH 凭据', dshUrl: getDshUrl() };
     }
     // 2. 人格判读
     const pStatus = personaStatus();

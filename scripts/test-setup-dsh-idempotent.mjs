@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { dshModulesDir } from './dsh-modules.mjs';
+import { fileURLToPath } from 'node:url';
+import { linkDir } from './test-links.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // 夹具放系统临时目录，**不要**放仓库的 state/：harden-state-acl.mjs 会把 state/ 的
@@ -48,7 +48,7 @@ fs.writeFileSync(path.join(tmpHome, 'profiles', 'web', 'package.json'), JSON.str
 
 // 用指向本仓库插件的 junction 冒充上一轮已安装的插件链接（与真实安装形态一致），
 // 这样脚本会走「已存在且指向本仓库 → 跳过」的正常分支。
-fs.symlinkSync(path.join(ROOT, 'plugins', 'qq-mode-console'), path.join(tmpHome, 'plugins', 'qq-mode-console'), 'junction');
+linkDir(path.join(ROOT, 'plugins', 'qq-mode-console'), path.join(tmpHome, 'plugins', 'qq-mode-console'));
 
 function runSetup(label) {
   const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'setup-dsh.mjs'), 'web'], {
@@ -88,8 +88,8 @@ console.log(`${hasBareArray ? '❌' : '✅'} 无独立成行的空数组 []`);
 if (hasBareArray) failed += 1;
 
 // 断言 4：YAML 可解析且顶层是数组
-const YAML = await import(pathToFileURL(path.join(dshModulesDir(), 'js-yaml/index.js')).href);
-const yaml = YAML.default ?? YAML;
+// 用本仓库自己的 js-yaml（package.json 依赖），不要求本机装过 DSH。
+const yaml = (await import('js-yaml')).default;
 let doc;
 try { doc = yaml.load(finalPatch); } catch (e) {
   console.log(`❌ YAML 解析失败: ${e.message}`); failed += 1;

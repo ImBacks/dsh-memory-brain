@@ -69,6 +69,9 @@ function makeCtl(overrides = {}) {
       root,
       stateDir,
       runDir,
+      // 这些用例验证的是 Linux 的 systemd / script 两条路；Windows 的 PID 管理器单独测，
+      // 不在这里靠真实进程碰运气。
+      platform: overrides.platform ?? 'linux',
       writeEnabled: () => {},
       ...overrides.deps,
       execFile: overrides.deps?.execFile ?? exec,
@@ -421,6 +424,33 @@ await test('等健康超时：后台结束后 phase=failed（不真的等 150 �
   const st = await waitIdle(ctl, 3000);
   assert.ok(Date.now() - started < 2000, '应使用注入的超时，而不是默认 150 秒');
   assert.equal(st.phase, 'failed');
+});
+
+// ── 7.5 Windows：进程管理器接口 ──────────────────────────────────────────
+await test('Windows：mode=pid、unitInstalled=false，启停只交给注入的 manager', async () => {
+  const calls = [];
+  const manager = {
+    detectMode: async () => 'pid',
+    status: async () => ({ active: false, state: '' }),
+    installed: async () => false,
+    start: async ({ managed }) => { calls.push(['start', managed]); },
+    stop: async ({ managed }) => { calls.push(['stop', managed]); },
+    restart: async () => { calls.push(['restart']); }
+  };
+  const { ctl } = makeCtl({
+    platform: 'win32',
+    extra: { manager },
+    deps: { readEnabled: () => false, fetchImpl: fetchDown(), embeddingKind: () => 'bundled' }
+  });
+  const st = await ctl.state();
+  assert.equal(st.mode, 'pid');
+  assert.equal(await ctl.unitInstalled('qq-embedding'), false);
+
+  await ctl.setEnabled(true);
+  await waitIdle(ctl, 2000);
+  await ctl.setEnabled(false);
+  await waitIdle(ctl, 2000);
+  assert.deepEqual(calls, [['start', true], ['stop', true]]);
 });
 
 // ── 8. 默认 execFile 的闸门 ──────────────────────────────────────────────
