@@ -25,6 +25,10 @@ bash scripts/update.sh
 - 让上游带来的 `CI` 工作流在这个仓库上跑通：隐私扫描只放行逐条核对过的误报，语音测试的静态匹配跟上本项目的代码。
 - 去掉这个仓库用不上的 `dev` 分支规则，`CONTRIBUTING`、`SECURITY`、Issue 模板都指向本仓库。
 
+```upgrade
+cost: none
+```
+
 ## v0.5.0 — 2026-11-04
 
 一份代码跑 Linux 和 Windows。`windows-native` 分支已合进来，以后只有 `main`。macOS 不做原生适配，请用 Docker 跑 Linux 容器。
