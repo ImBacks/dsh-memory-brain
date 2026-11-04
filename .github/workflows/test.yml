@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -46,3 +46,62 @@ jobs:
       - if: failure()
         run: python ../../scripts/ci-pytest-summary.py pytest.xml
         working-directory: sidecars/memory-rag
+
+  # 真实的 DSH：预设必须注册得上、会话必须建得起来。DSH 一发新版这里先红，不用等用户反馈。
+  dsh-compat:
+    name: dsh ${{ matrix.dsh }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    # alpha 通道只是预警：它红了提醒我们，但不挡合并。
+    continue-on-error: ${{ matrix.dsh == 'alpha' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        dsh: ['0.2.1-rc.3', latest, alpha]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm install -g @deepseek-ai/dsh@${{ matrix.dsh }}
+      - run: node scripts/ci-dsh-compat.mjs
+
+  # 官方 Windows 桌面版安装包：静默安装后按桌面版 main 进程的方式拉起 Host，看预设注册得上不。
+  dsh-desktop-windows:
+    name: dsh desktop (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 25
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: 下载并静默安装桌面版
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://download.deepseek.com/desktop/dsh-latest-windows-x64.exe -OutFile dsh-setup.exe
+          Start-Process -FilePath .\dsh-setup.exe -ArgumentList '/S' -Wait
+      - run: node scripts/ci-dsh-compat.mjs --desktop
+
+  # 真的跑一遍一键入口：目录名带括号和空格，node_modules 现装，Windows 按双击的方式调用。
+  entry-smoke:
+    name: start-all smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install -g @deepseek-ai/dsh@latest
+      - run: node scripts/ci-start-smoke.mjs

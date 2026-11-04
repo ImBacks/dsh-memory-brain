@@ -292,7 +292,7 @@ await test('GET /api/update/status 形状；harness 里恒为 off、零请求；
       for (const k of ['ok', 'version', 'state', 'latest', 'newer', 'notes', 'upgrade', 'command', 'checkedAt', 'lastUpgrade']) assert.ok(k in res.json, k);
       assert.equal(res.json.version, '0.3.0');
       assert.equal(res.json.state, 'off');
-      assert.equal(res.json.command, 'bash scripts/update.sh');
+      assert.equal(res.json.command, process.platform === 'win32' ? 'update.bat' : 'bash scripts/update.sh');
       res = await call(port, '/api/update/check', { method: 'POST', body: {} });
       assert.equal(res.status, 200, res.body);
       assert.equal(res.json.state, 'off');

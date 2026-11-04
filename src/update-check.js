@@ -284,7 +284,7 @@ export function createUpdateCheck({
       newer: off ? false : result.newer,
       notes: off ? [] : result.notes,
       upgrade: off ? null : result.upgrade,
-      command: 'bash scripts/update.sh',
+      command: process.platform === 'win32' ? 'update.bat' : 'bash scripts/update.sh',
       checkedAt: off ? null : result.checkedAt,
       ...(result.error && !off && result.state === 'error' ? { error: result.error } : {}),
       lastUpgrade: lastUpgrade(),

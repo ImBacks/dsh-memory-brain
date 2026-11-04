@@ -73,8 +73,8 @@ node -v        # 显示 v24.x.x 就对了
 ### 第 2 步：安装并启动 DSH（AI 本体）
 
 ```bash
-# 装指定版本（本项目在 0.2.1-rc.3 上测过；装更新的版本可能不兼容）
-npm install -g @deepseek-ai/dsh@0.2.1-rc.3
+# 装最新版（CI 在 0.2.1-rc.3 和 latest 上核对预设注册和建会话）
+npm install -g @deepseek-ai/dsh@latest
 
 # 启动（这个终端窗口保持开着）
 dsh web --no-open
@@ -86,7 +86,7 @@ dsh web --no-open
 
 **3.1 安装 Linux QQ 3.2.32**
 
-> ⚠️ **必须是 3.2.32**。更新的 3.2.34 会让 SnowLuma 2.2.0 注入失败。官网只提供最新版，旧版可以在 [Rodert/qq-versions](https://github.com/Rodert/qq-versions) 这类存档里找到 `QQ_3.2.32_…_amd64_01.deb`（第三方存档，下载后请自行核对来源和校验值）。
+> ⚠️ **SnowLuma 2.2.0 必须配 3.2.32**（3.2.34 会注入失败）。更新的 SnowLuma 配更新的 QQ 还没验证过，见 [真机复现清单](docs/guides/REAL_DEVICE_CHECKLIST.md)。官网只提供最新版，旧版可以在 [Rodert/qq-versions](https://github.com/Rodert/qq-versions) 这类存档里找到 `QQ_3.2.32_…_amd64_01.deb`（第三方存档，下载后请自行核对来源和校验值）。
 
 ```bash
 sudo apt install ./QQ_3.2.32_*_amd64_01.deb
@@ -288,10 +288,20 @@ bash scripts/update.sh           # 真正升级（会先备份 state/ 和 config
 **第一次升级**（v0.3.0 及更早的版本里还没有这个脚本）先执行这一条，把脚本取下来：
 
 ```bash
-git fetch origin && git checkout origin/main -- scripts/update.sh
+git fetch origin && git checkout origin/main -- scripts/update.sh scripts/update.mjs scripts/lib/upgrade-common.mjs
 ```
 
 脚本只会重启本项目、记忆服务和 DSH 中需要重启的那几个，**永远不会动 QQ 和 SnowLuma**。升级失败时会打印回滚命令（`bash scripts/rollback.sh`）。每个版本改了什么、要注意什么，见 [CHANGELOG.md](CHANGELOG.md)。
+
+---
+
+Windows 上把上面的命令换成 `update.bat --check`、`update.bat`，回滚是 `rollback.bat`。
+
+---
+
+## 🍎 macOS
+
+桥接和 DSH（桌面版或 `dsh web`）都能在 macOS 上跑，`./start-all.sh` 走和 Windows 一样的流程。SnowLuma 没有 macOS 版，QQ 和 SnowLuma 要放在别的机器上：把 `config.json` 的 `snowluma.httpUrl`、`wsUrl` 改成那台机器的地址，并填好 `snowluma.accessToken`、`wsAccessToken`。
 
 ---
 
@@ -309,7 +319,7 @@ git fetch origin && git checkout origin/main -- scripts/update.sh
 
 - Windows 10/11（x64），有桌面会话（QQ 要登录）
 - **Node.js 22.13+（建议 24）**：<https://nodejs.org/>，自带 npm
-- **DeepSeek Harness（DSH）**：**桌面版**或**网页版**（`npm install -g @deepseek-ai/dsh@0.2.1-rc.3`）二选一，都支持
+- **DeepSeek Harness（DSH）**：**桌面版**或**网页版**（`npm install -g @deepseek-ai/dsh@latest`）二选一，都支持
 - 一个**专门给 AI 用的 QQ 小号**（不要用大号）+ QQNT
 - **SnowLuma**：自己到 [SnowLuma Releases](https://github.com/SnowLuma/SnowLuma/releases) 下载 Windows 包，解压到任意目录
 - （可选）Python 3.12 + [uv](https://docs.astral.sh/uv/)（记忆服务 memory-rag）；10 GB 以上显存的 NVIDIA 显卡（本地 embedding）

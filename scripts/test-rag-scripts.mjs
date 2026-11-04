@@ -135,6 +135,7 @@ function makeHome({ name, units = true, settingsKind = 'bundled', provider = 'lo
     fs.copyFileSync(path.join(REPO, file), path.join(bridge, file));
     fs.chmodSync(path.join(bridge, file), 0o755);
   }
+  fs.cpSync(path.join(REPO, 'scripts', 'lib'), path.join(bridge, 'scripts', 'lib'), { recursive: true });
   fs.copyFileSync(path.join(REPO, 'scripts', 'start-all.mjs'), path.join(bridge, 'scripts', 'start-all.mjs'));
   fs.copyFileSync(path.join(REPO, 'scripts', 'stop-all.mjs'), path.join(bridge, 'scripts', 'stop-all.mjs'));
   fs.cpSync(path.join(REPO, 'src', 'runtime'), path.join(bridge, 'src', 'runtime'), { recursive: true });

@@ -236,7 +236,7 @@ console.log('## 回归：AI 语音通道不许穿出语音库（P1，曾可复�
     fs.writeFileSync(outside, Buffer.alloc(512, 1));
 
     // 正常用法必须仍然可用（别把功能一起修死）
-    ok(h.resolveVoicePathForV2('ok.mp3').path === path.join(dir, 'ok.mp3'), '合法文件名可用');
+    ok(h.resolveVoicePathForV2('ok.mp3').path === path.join(fs.realpathSync(dir), 'ok.mp3'), '合法文件名可用');
     ok(h.resolveVoicePathForV2('ok').path === path.join(dir, 'ok.mp3'), '省略扩展名仍可用');
 
     for (const [label, payload] of [

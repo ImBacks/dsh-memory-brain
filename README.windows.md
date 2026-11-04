@@ -58,7 +58,7 @@
 ## 三、安装本项目并一键启动
 
 ```bat
-git clone -b windows-native https://github.com/y083245/dsh-memory-brain.git
+git clone https://github.com/y083245/dsh-memory-brain.git
 cd dsh-memory-brain
 start-all.bat
 ```
@@ -139,3 +139,21 @@ start-all.bat --rag
 | 开着 Clash 等系统代理 | 桥接对 127.0.0.1 的请求一律不走代理，无需设置 |
 
 更多排查见 [完整说明](docs/guides/FULL_GUIDE.md) 与 [AI 部署手册](docs/guides/WINDOWS_AI_DEPLOY.md)。
+
+---
+
+## 双击 `start-all.bat` 窗口一闪就没了？
+
+新版的窗口不会自己关（报错后会停在「按任意键继续」）。如果还是一闪而过：
+
+1. 确认是**解压后**运行的，不是在压缩包里直接双击；
+2. 打开 `cmd`，`cd` 到项目目录，手动运行 `start-all.bat`，把输出发出来；
+3. 看 `%USERPROFILE%\.ai-companion-run\start-all.log`，这份日志每次运行都会写。
+
+老的 `windows-native` 分支已经合进 `main`。之前从那个分支 clone 的，运行一次：
+
+```bat
+git fetch origin
+git switch main
+start-all.bat
+```

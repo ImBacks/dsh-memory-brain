@@ -88,7 +88,7 @@ xcopy "%USERPROFILE%\.dsh\plugins" "%BK%\plugins" /E /I /H /Y
 ## 3. 安装/更新本项目
 
 ```bat
-git clone -b windows-native https://github.com/y083245/dsh-memory-brain.git
+git clone https://github.com/y083245/dsh-memory-brain.git
 cd dsh-memory-brain
 start-all.bat
 ```

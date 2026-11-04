@@ -1,0 +1,113 @@
+#!/usr/bin/env node
+// CI：用真实的 DSH 核对 QQ 预设能不能注册、会话能不能建起来。
+//
+//   node scripts/ci-dsh-compat.mjs             # PATH 里的 dsh，web profile
+//   node scripts/ci-dsh-compat.mjs --desktop   # 已安装的桌面版：按它 main 进程的方式无界面拉起 Host（Windows / macOS）
+//
+// 全部用隔离的 DSH_HOME，不碰本机已有的 ~/.dsh；不需要模型密钥，不发真实请求。
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const home = fs.mkdtempSync(path.join(os.tmpdir(), 'qqb-dsh-compat-'));
+process.env.HOME = home;
+process.env.USERPROFILE = home;
+process.env.DSH_HOME = path.join(home, '.dsh');
+for (const key of ['DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY']) delete process.env[key];
+const desktop = process.argv.includes('--desktop');
+
+const { commandSpec, resolveElectronShim } = await import('../src/runtime/commands.mjs');
+const { findDshCli } = await import('../src/runtime/paths.mjs');
+const { checkDshPresets, diagnosePresetProfile } = await import('../src/dsh-discovery.js');
+const { NodeApiClient, unwrap } = await import('../src/dsh-client.js');
+
+const cli = findDshCli({ env: process.env });
+if (!cli) { console.error('找不到 dsh'); process.exit(1); }
+console.log(`dsh CLI: ${cli}`);
+const version = commandSpec(cli, ['--version'], { env: process.env, nodeBin: process.execPath });
+const versionRun = spawnSync(version.command, version.args, { encoding: 'utf8', env: { ...process.env, ...version.env }, windowsVerbatimArguments: version.windowsVerbatimArguments });
+console.log(`dsh version: ${String(versionRun.stdout ?? '').trim()}`);
+
+const configFile = path.join(ROOT, 'config.json');
+if (!fs.existsSync(configFile)) fs.copyFileSync(path.join(ROOT, 'config.example.json'), configFile);
+
+const profile = desktop ? 'desktop' : 'web';
+const setup = spawnSync(process.execPath, ['scripts/setup-dsh.mjs', profile], { cwd: ROOT, encoding: 'utf8', env: process.env });
+console.log(setup.stdout.split(/\r?\n/).filter((l) => /RESULT|install|ERROR|失败/.test(l)).join('\n'));
+if (setup.status !== 0) { console.error(setup.stderr); process.exit(1); }
+
+/** 启动 Host，返回 { child, baseUrl: Promise<string> }。 */
+function startHost() {
+  if (!desktop) {
+    const port = 13080;
+    const spec = commandSpec(cli, ['--profile', 'web', '--no-open', '--port', String(port)], { env: process.env, nodeBin: process.execPath });
+    const child = spawn(spec.command, spec.args, {
+      env: { ...process.env, ...spec.env }, stdio: ['ignore', 'inherit', 'inherit'],
+      windowsHide: true, windowsVerbatimArguments: spec.windowsVerbatimArguments, detached: process.platform !== 'win32'
+    });
+    return { child, baseUrl: Promise.resolve(`http://127.0.0.1:${port}`) };
+  }
+  // 桌面版不让 CLI 用 desktop profile（「managed exclusively by the Electron application」），
+  // 所以照 apps/desktop/src/host-process.ts 的参数和 IPC 直接拉 Host，不开窗口。
+  let exe;
+  if (process.platform === 'win32') exe = resolveElectronShim(cli)?.command;
+  else exe = path.resolve(path.dirname(cli), '..', '..', '..', '..', 'MacOS', 'DeepSeek Harness');
+  if (!exe || !fs.existsSync(exe)) { console.error('找不到桌面版主程序'); process.exit(1); }
+  const resources = process.platform === 'win32' ? path.join(path.dirname(exe), 'resources') : path.resolve(path.dirname(exe), '..', 'Resources');
+  const runtimeDir = path.join(resources, 'app.asar', 'dsh');
+  const entry = path.join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js');
+  const profileDir = path.join(process.env.DSH_HOME, 'profiles', 'desktop');
+  const child = spawn(exe, ['--expose-internals', entry, runtimeDir, profileDir, path.join(resources, 'runtime', 'primary-runtime')], {
+    cwd: profileDir, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: ['ignore', 'inherit', 'inherit', 'ipc'], windowsHide: true
+  });
+  const baseUrl = new Promise((resolve, reject) => {
+    child.on('message', (m) => {
+      if (m?.type === 'ready') resolve(new URL(m.url).origin);
+      if (m?.type === 'fatal') reject(new Error(`Host fatal: ${JSON.stringify(m).slice(0, 2000)}`));
+    });
+    child.on('exit', (code) => reject(new Error(`Host 提前退出：${code}`)));
+  });
+  return { child, baseUrl };
+}
+
+function stopHost(child) {
+  if (child.exitCode !== null) return;
+  if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+  else { try { process.kill(desktop ? child.pid : -child.pid, 'SIGTERM'); } catch { /* 已经退了 */ } }
+}
+
+const { child, baseUrl } = startHost();
+const deadline = Date.now() + 180000;
+let failed = false;
+try {
+  const base = await Promise.race([
+    baseUrl,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Host 180 秒没有就绪')), 180000).unref())
+  ]);
+  console.log(`Host: ${base}`);
+  let presets = { ok: null, ids: [], missing: [] };
+  while (presets.ok === null && Date.now() < deadline) {
+    presets = await checkDshPresets(base, { timeoutMs: 4000 });
+    if (presets.ok === null) await new Promise((r) => setTimeout(r, 2000));
+  }
+  console.log(`agentPresets/list: ${presets.ids.join(', ') || '（空）'}`);
+  if (presets.ok !== true) {
+    failed = true;
+    console.error(`::error::QQ 预设没注册上（缺 ${presets.missing.join(', ') || '查询失败'}）`);
+    for (const line of diagnosePresetProfile({ home: process.env.DSH_HOME, profile })) console.error(`  ${line}`);
+  } else {
+    const api = new NodeApiClient(base, undefined, {});
+    const created = unwrap(await api.sessions.create({ cwd: home, agentPreset: 'qq-chat-v2' }), 'session.create');
+    console.log(`session/create qq-chat-v2: ${created.sessionId ?? JSON.stringify(created).slice(0, 80)}`);
+  }
+} catch (error) {
+  failed = true;
+  console.error(`::error::${error?.message ?? error}`);
+} finally {
+  stopHost(child);
+}
+console.log(failed ? 'FAILED' : 'OK');
+process.exit(failed ? 1 : 0);

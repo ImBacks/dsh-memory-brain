@@ -5773,7 +5773,7 @@ async function main() {
           if (req.headers['x-agent-call'] !== undefined || req.headers['x-agent-token'] !== undefined) { sendJson({ ok: false, error: '该接口仅控制台可用' }, 403); return; }
           const updateStatus = () => (updateCheck
             ? updateCheck.status()
-            : { version: null, state: 'off', latest: null, newer: false, notes: [], upgrade: null, command: 'bash scripts/update.sh', checkedAt: null, lastUpgrade: null });
+            : { version: null, state: 'off', latest: null, newer: false, notes: [], upgrade: null, command: process.platform === 'win32' ? 'update.bat' : 'bash scripts/update.sh', checkedAt: null, lastUpgrade: null });
           if (req.method === 'GET' && url.pathname === '/api/update/status') {
             sendJson({ ok: true, ...updateStatus() });
             return;

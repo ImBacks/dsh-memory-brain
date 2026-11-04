@@ -36,7 +36,7 @@ export const stepper = (total) => (n, msg) => console.log(`\n${paint('1;36', `[$
 
 function isUnderTmp(real) {
   const roots = ['/tmp/', '/private/tmp/'];
-  try { roots.push(`${fs.realpathSync(os.tmpdir())}${path.sep}`); } catch { /* 取不到就只认 /tmp */ }
+  if (process.platform === 'win32') roots.push(`${fs.realpathSync(os.tmpdir())}${path.sep}`);
   return roots.some((root) => `${real}${path.sep}`.startsWith(root));
 }
 
@@ -101,7 +101,8 @@ function isExecutable(file) {
 export function binOf(ctx, name) {
   if (ctx.isTest) {
     const fake = path.join(process.env.QQB_FAKE_BIN, name);
-    return isExecutable(fake) ? fake : '';
+    if (isExecutable(fake)) return fake;
+    return process.platform === 'win32' && isExecutable(`${fake}.cmd`) ? `${fake}.cmd` : '';
   }
   const exts = process.platform === 'win32' ? (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';') : [''];
   for (const dir of String(process.env.PATH ?? '').split(path.delimiter).filter(Boolean)) {

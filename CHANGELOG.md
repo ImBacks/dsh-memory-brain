@@ -1,17 +1,37 @@
 # 更新日志
 
-每个版本一节。节末的 ```` ```upgrade ```` 代码块是给 `scripts/update.sh` 读的升级须知（要重启什么、要不要装依赖等），升级时会自动显示。
+每个版本一节。节末的 ```` ```upgrade ```` 代码块是给 `scripts/update.mjs` 读的升级须知（要重启什么、要不要装依赖等），升级时会自动显示。
 
 ## 第一次升级（还没有 `scripts/update.sh` 的老版本，比如 v0.3.0 及更早）
 
 在项目目录里执行这两条命令：
 
 ```bash
-git fetch origin && git checkout origin/main -- scripts/update.sh
+git fetch origin && git checkout origin/main -- scripts/update.sh scripts/update.mjs scripts/lib/upgrade-common.mjs
 bash scripts/update.sh
 ```
 
 以后升级只要 `bash scripts/update.sh`。
+
+## v0.5.0 — 2026-11-04
+
+一份代码跑 Linux、Windows、macOS。`windows-native` 分支已合进来，以后只有 `main`。
+
+- **修 Windows 双击 `start-all.bat` 闪退**：旧脚本在括号块里展开 `%cmdcmdline%`，目录名带 `)` 或 `&` 就是语法错误，窗口直接关掉。现在窗口一定留得住，Node 没装 / 太旧 / 只解压了一个文件都会说清楚；每次运行的输出另存到 `~/.ai-companion-run/start-all.log`。
+- **`.sh` / `.bat` 只做薄入口**：`update`、`rollback` 从 1250 行 bash 改成 Node（`scripts/update.mjs`、`scripts/rollback.mjs`），Windows 用 `update.bat`、`rollback.bat`。
+- **DSH 兼容**：CI 在三个系统上用真实的 DSH（0.2.1-rc.3、latest、alpha）核对预设注册和建会话。`start-all` 启动时问 DSH 预设注册上了没有，没有就打印磁盘诊断。
+- **吸收上游 qq-bridge `v0.2.1-r2` + `dev`**：会话数据隔离、执行期会话绑定、发送撤权、控制台错误脱敏、自定义模型思考强度降级、桌面版端口自愈等安全与稳定性修复。
+- **许可变更**：上游 `v0.2.1-r1` 之后改用 [PolyForm Noncommercial 1.0.0](LICENSE)（禁止商用），合入后本项目一起遵守，详见 [NOTICE.md](NOTICE.md)。
+- **SnowLuma 2.3+**：第一次运行要先在它的 WebUI 同意协议，等 OneBot 时会提示。
+- 修 macOS 上一批 `/tmp` 符号链接导致脚本静默不执行的问题。
+
+```upgrade
+restart: memory-rag, dsh, bridge
+deps: npm
+setup-dsh: true
+migrate: false
+cost: none
+```
 
 ## v0.4.0 — 2026-11-03
 
