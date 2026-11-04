@@ -2,7 +2,11 @@
 
 每个版本一节。节末的 ```` ```upgrade ```` 代码块是给 `scripts/update.mjs` 读的升级须知（要重启什么、要不要装依赖等），升级时会自动显示。
 
-## 第一次升级（还没有 `scripts/update.sh` 的老版本，比如 v0.3.0 及更早）
+## 第一次升级
+
+Windows（`windows-native` 分支）和其它情况的命令见 [README](README.md#-升级到新版本)。
+
+还没有 `scripts/update.sh` 的 Linux 老版本（v0.3.0 及更早）
 
 在项目目录里执行这两条命令：
 

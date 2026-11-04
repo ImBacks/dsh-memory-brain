@@ -228,7 +228,8 @@ export const unitInstalled = (name) => fs.existsSync(path.join(os.homedir(), '.c
 /** DSH：node … apps/cli/src/bin.ts web 进程，加上它父链上的 pnpm / sh；外层在前。 */
 export function dshPids(ctx) {
   const seen = new Set();
-  for (const pid of pgrepF(ctx, 'apps/cli/src/bin\\.ts web')) {
+  // 源码跑的 DSH 和 npm 全局装的 DSH 都认。
+  for (const pid of pgrepF(ctx, '(apps/cli/src/bin\\.ts|@deepseek-ai/dsh/lib/bin\\.js) web')) {
     if (!/^\d+$/.test(pid) || Number(pid) <= 1) continue;
     const chain = [pid];
     let cur = pid;

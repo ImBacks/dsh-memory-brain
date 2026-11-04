@@ -28,7 +28,7 @@
 
 | | 桌面版（DeepSeek Harness 安装包） | 网页版（`dsh web`） |
 |---|---|---|
-| 怎么装 | 官网下载安装包 | `npm install -g @deepseek-ai/dsh@0.2.1-rc.3` |
+| 怎么装 | 下载[官方安装包](https://download.deepseek.com/desktop/dsh-latest-windows-x64.exe) | `npm install -g @deepseek-ai/dsh@latest` |
 | API 地址 | 每次启动**随机端口**，桥接按进程自动找到 | 固定 <http://127.0.0.1:3080> |
 | 模型 | 在桌面版里登录 DeepSeek 账号（或填 API Key） | 浏览器打开 3080 →「设置 → 模型」登录账号 / 填 API Key |
 | `start-all.bat` 怎么用它 | 桌面版**开着**就直接用桌面版 | 桌面版没开时，自动起 `dsh web`（装了桌面版也能用它自带的 dsh） |

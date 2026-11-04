@@ -39,11 +39,6 @@
 
 | 文档 | 内容 | 状态 |
 | --- | --- | --- |
-| [design/GEN2_SIMULATION_PLAN.md](design/GEN2_SIMULATION_PLAN.md) | 二代仿真（`reserved2`）「一切皆工具」实施计划：WakeConfig 唤醒调度、MCP 工具集、控制台参数、`qq-chat-v2` preset | ⚠️ 骨架/API/调度/MCP/UI 均已落地，文中「状态：实施中」与残留 TODO 以当前代码为准 |
-| [design/SOCIAL_MODE_PLAN.md](design/SOCIAL_MODE_PLAN.md) | 一代仿真模式（`reserved`）的头脑风暴定案：规则引擎管「何时说」、LLM 管「说什么」 | ⚠️ 描述的一代状态机已实现；`reserved2` 已是默认模式，设计背景仍有效 |
-| [design/DSH_QQ_TOOLS_PLAN.md](design/DSH_QQ_TOOLS_PLAN.md) | 「一切皆工具」总路线与交接文档：当前能力盘点、安全性设计、分阶段计划 | ⚠️ 阶段计划大部分已完成，作为路线/安全设计参考仍有效 |
-| [design/真人语感策略.md](design/真人语感策略.md) | 拟人化策略：短句碎片、接梗、错别字、话题漂移、选择性沉默、括号用法 | ⚠️ 文首已自注：部分「现状」写于旧版随机分句时期，最新行为以 PROJECT_GUIDE / 代码为准 |
-| [design/RAG_MEMORY_PLAN.md](design/RAG_MEMORY_PLAN.md) | 向量记忆（RAG）技术方案：聊天存档 → 时间分段 + 话题切块 → 本地 Qwen3-Embedding（llama.cpp）→ Chroma + FTS5/BM25 → `qq_history_search`（AI 自己改写 query + keywords）混合检索；会话隔离、降级、分期 | 📝 方案阶段，未实施（2026-10-28） |
 | [DSH 0.2.1 适配记录](guides/DSH_021_ADAPTATION.md) | DSH 0.2.1-rc.2 适配证据、失效提示词变量与工具守卫 | 🗄️ 2026-10-22，对应 `v0.2.1-r1` |
 | [2026-10-31 仓库体检](guides/AUDIT_2026-10-31.md) | 会话资料隔离、发送撤权、网络与路径边界、依赖和历史隐私扫描 | 🗄️ 2026-10-31 |
 | [2026-10-31 issues 核查](guides/ISSUE_STATUS_2026-10-31.md) | 当时未关闭 issues 的逐项结论、验证范围与未复现事项 | 🗄️ 2026-10-31 |

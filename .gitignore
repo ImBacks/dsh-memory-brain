@@ -70,7 +70,10 @@ docs/guides/VOICE.md
 audio/
 
 # 本机部署说明（含本机路径、QQ 号等个人信息）—— 不发布
-/CLAUDE.md
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+.claude/
 
 # ── 运行时 / 本地环境 / 个人配置（开源发布时不该入库）────────────────────────
 # Python 虚拟环境、字节码与测试缓存：都是本机生成物。
