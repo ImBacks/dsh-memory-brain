@@ -1,5 +1,5 @@
 @echo off
-rem Thin entry: the logic lives in scripts\update.mjs (shared by Linux, macOS and Windows).
+rem Thin entry: the logic lives in scripts\update.mjs (shared by Linux and Windows).
 rem Keep this file ASCII + CRLF. %cmdcmdline% and %~dp0 can hold ( ) & ^ ! so they must
 rem never be expanded inside a parenthesized block: a stray ")" there is a syntax error,
 rem and cmd.exe then closes a double-clicked window at once with nothing left to read.

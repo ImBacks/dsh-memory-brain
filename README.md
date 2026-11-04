@@ -54,15 +54,15 @@
 | --- | --- | --- | --- | --- |
 | 🐧 **Linux** | Linux QQ + SnowLuma，可以由脚本拉起 | 网页版 `dsh web` | `./start-all.sh` | [Linux 安装](#-linux-安装) |
 | 🪟 **Windows 10 / 11**（原生，不是 WSL） | QQNT + SnowLuma，自己打开并注入 | 桌面版或网页版都行 | 双击 `start-all.bat` | [Windows 安装](#-windows-安装) |
-| 🍎 **macOS** | SnowLuma 没有 macOS 版，要放在别的机器上 | 桌面版或网页版都行 | `./start-all.sh` | [macOS](#-macos) |
+| 🍎 **macOS** | 不做原生适配 | — | — | 用 [Docker 跑 Linux 容器](#-macos用-docker-跑-linux-容器) |
 
-**开始之前，三个系统都要准备：**
+**开始之前都要准备：**
 
 - 一个**专门给 AI 用的 QQ 小号**（⚠️ 不要用大号，第三方客户端有被风控的风险）
 - 一个 **DeepSeek API 密钥**：到 [platform.deepseek.com](https://platform.deepseek.com) 注册、充值几块钱、创建 API Key（形如 `sk-...`，只显示一次，先存好）。桌面版也可以直接登录 DeepSeek 账号
 - （可选）一张 **10 GB 显存以上的 NVIDIA 显卡**，用来在本地跑记忆服务的 embedding；没有也没关系，可以用云端 API，或者先不开记忆服务
 
-> **版本说明**：作者实际跑通全链路的组合是 **SnowLuma 2.2.0**（Linux 配 QQ 3.2.32，Windows 配 QQNT 9.9）。更新的 SnowLuma（目前到 2.4.0）读配置和启动的方式已核对过、不用改代码，但还没有真正注入 QQ 验证过，见[真机复现清单](docs/guides/REAL_DEVICE_CHECKLIST.md)。DSH 由 CI 在三个系统上持续核对：0.2.1-rc.3、latest、alpha。
+> **版本说明**：作者实际跑通全链路的组合是 **SnowLuma 2.2.0**（Linux 配 QQ 3.2.32，Windows 配 QQNT 9.9）。更新的 SnowLuma（目前到 2.4.0）读配置和启动的方式已核对过、不用改代码，但还没有真正注入 QQ 验证过，见[真机复现清单](docs/guides/REAL_DEVICE_CHECKLIST.md)。DSH 由 CI 在 Linux、Windows 上持续核对：0.2.1-rc.3、latest、alpha。
 
 ---
 
@@ -192,7 +192,7 @@ echo "http://127.0.0.1:3100/?token=$(cat state/console-token)"
 - `./start-all.sh`：按顺序启动 DSH → QQ → SnowLuma → 本项目，已经在跑的自动跳过。程序路径不在默认位置时，用 `DSH_DIR`、`SNOW_DIR`、`QQ_BIN` 环境变量或 `config.json` 的 `orchestrator` 段覆盖，**不要直接改脚本**。
 - `bash scripts/systemd/install.sh`：把本项目和记忆服务装成 systemd 用户服务，崩溃自动拉起；加 `--enable` 开机自启（QQ 仍需人工扫码登录）。
 
-基础的「QQ 里的 AI 朋友」到这里就跑起来了，想加人格和记忆服务，看[可选增强](#-可选增强两个系统通用)。
+基础的「QQ 里的 AI 朋友」到这里就跑起来了，想加人格和记忆服务，看[可选增强](#-可选增强linuxwindows-通用)。
 
 ---
 
@@ -253,7 +253,7 @@ Windows 没有 systemd，所以没有开机自启。需要的话用「任务计�
 
 ---
 
-## ✨ 可选增强（两个系统通用）
+## ✨ 可选增强（Linux、Windows 通用）
 
 ### 开启人格与情绪
 
@@ -319,15 +319,22 @@ uv pip install --python .venv\Scripts\python.exe -e .
 
 ---
 
-## 🍎 macOS
+## 🍎 macOS：用 Docker 跑 Linux 容器
 
-桥接和 DSH（桌面版或 `dsh web`）都能在 macOS 上跑，`./start-all.sh` 走和 Windows 一样的流程。SnowLuma 没有 macOS 版，QQ 和 SnowLuma 要放在别的机器上：把 `config.json` 的 `snowluma.httpUrl`、`wsUrl` 改成那台机器的地址，并填好 `snowluma.accessToken`、`wsAccessToken`。单元测试和启动脚本由 CI 在 macOS 上核对，完整收发链路还没有验证过。
+macOS 不做原生适配（SnowLuma 也没有 macOS 版）。请用 Docker 起一个 Linux 容器，在容器里按上面的 [Linux 安装](#-linux-安装)流程部署，要注意：
+
+- QQ 只有 amd64 的安装包：Apple 芯片的 Mac 用 `--platform linux/amd64` 起容器。
+- SnowLuma 接入 QQ 要 ptrace 权限：起容器时加 `--cap-add=SYS_PTRACE`，容器里照样要做第 3 步的 `setcap`。
+- QQ 要扫码登录，容器里要有图形桌面（比如 VNC）；DSH 和控制台都只监听容器内的 `127.0.0.1`，用同一个桌面里的浏览器打开。
+- 把项目目录挂成卷，`state/` 和 `config.json` 才不会随容器丢失。
+
+项目不提供现成镜像，这条路作者没有完整跑过。
 
 ---
 
 ## 🕹️ 日常使用
 
-| 要做什么 | Linux / macOS | Windows |
+| 要做什么 | Linux | Windows |
 | --- | --- | --- |
 | 启动（已在跑的自动跳过） | `./start-all.sh` | `start-all.bat` |
 | 停止桥接和记忆服务 | `./stop-all.sh` | `stop-all.bat` |
@@ -348,7 +355,7 @@ uv pip install --python .venv\Scripts\python.exe -e .
 **已经是 v0.5.0 及以后：**
 
 ```bash
-bash scripts/update.sh --check   # Linux / macOS：先看看有什么新版本、要重启什么
+bash scripts/update.sh --check   # Linux：先看看有什么新版本、要重启什么
 bash scripts/update.sh           # 真正升级
 ```
 
@@ -426,7 +433,7 @@ git switch main
 npm test      # 跨平台单元测试，自动跳过需要真实 DSH / QQ / 浏览器的用例
 ```
 
-CI 在 Linux、Windows、macOS 上跑单元测试和 memory-rag 测试，用真实的 DSH 核对预设注册和建会话，并在 Windows、macOS 上真的跑一遍一键启动。`.sh` 和 `.bat` 只做薄入口，逻辑都写在 `scripts/*.mjs` 和 `src/runtime/` 里。
+CI 在 Linux、Windows 上跑单元测试和 memory-rag 测试，用真实的 DSH 核对预设注册和建会话，并在 Windows 上真的跑一遍一键启动。`.sh` 和 `.bat` 只做薄入口，逻辑都写在 `scripts/*.mjs` 和 `src/runtime/` 里。
 
 ---
 

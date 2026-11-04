@@ -827,13 +827,8 @@ function profileOf(endpoint) {
 }
 
 /** 桌面版 exe：从 dsh CLI（Electron 垫片）反推，找不到返回 ''。 */
-function desktopExe(env, platform = process.platform) {
+function desktopExe(env) {
   const cli = findDshCli({ env });
-  // macOS 的垫片是 shell 脚本：反推到 .app 里的主程序。
-  if (platform === 'darwin') {
-    const exe = cli ? path.join(path.dirname(cli), '..', '..', '..', '..', 'MacOS', 'DeepSeek Harness') : '';
-    return exe && isFile(exe) ? exe : '';
-  }
   const shim = cli ? resolveElectronShim(cli) : null;
   return shim?.command ?? '';
 }
@@ -849,7 +844,7 @@ async function waitForEndpoint(options, seconds) {
 }
 
 async function launchDesktop({ paths, env, log, ok, err, platform, dshOptions }) {
-  const exe = desktopExe(env, platform);
+  const exe = desktopExe(env);
   if (!exe) {
     err(`找不到 DSH 桌面版。装了桌面版就先手动打开它；没装请用 ${entryName('start-all', platform)} --web`);
     return null;
@@ -958,7 +953,6 @@ async function ensureOneBotUserManaged({ paths, env, log, ok, warn, err, platfor
       log('  → 请打开 SnowLuma，注入 QQ 并登录，确认 OneBot 的 HTTP 服务端（3000）与 WebSocket 服务端（3001）已启用');
       // SnowLuma 2.3 起第一次运行要在 WebUI 里同意协议，没同意之前什么都不会开。这是用户本人的决定，脚本不替他同意。
       log('  → SnowLuma 2.3 及以上第一次运行时，要先打开它的 WebUI（默认 http://127.0.0.1:5099）同意用户协议与隐私政策');
-      if (platform === 'darwin') log('  → SnowLuma 没有 macOS 版：QQ 和 SnowLuma 跑在别的机器上时，把 config.json 的 snowluma.httpUrl / wsUrl 改成那台机器的地址');
       log(`  （最多再等 ${Math.max(0, Math.round((deadline - Date.now()) / 1000))} 秒；Ctrl+C 可退出）`);
     }
     await sleep(2000);
@@ -1204,9 +1198,8 @@ export async function runStart({
     err(`找不到桥接主程序：${path.join(root, 'src', 'bridge.js')}`);
     return 1;
   }
-  // Windows / macOS：QQ、SnowLuma 由用户自己管（macOS 没有 SnowLuma 官方包，只能连别的机器上的 OneBot）。
-  // 只有 Linux 才由本脚本替用户拉起它们，也只有 Linux 有 systemd。
-  if (platform !== 'linux') {
+  // Windows：QQ、SnowLuma 由用户自己管。只有 Linux 才由本脚本替用户拉起它们，也只有 Linux 有 systemd。
+  if (platform === 'win32') {
     ok(`node: ${paths.nodeBin}`);
     ok(`日志目录: ${paths.runDir}`);
     return runStartUserManaged({ args, paths, env, log, ok, warn, err, platform, ragEnabled });
@@ -1324,7 +1317,7 @@ export async function runStop({
 
   // Windows 上 QQ / SnowLuma 默认由用户自己打开、注入（start-all 不再替你起它们）：
   // 只停本脚本用 START_SNOWLUMA=1 起过、留了 PID 文件的那份；否则按镜像名兜底会把用户自己的 QQ 关掉。
-  const userManaged = (pidName) => platform !== 'linux' && !readPidFile(path.join(paths.runDir, pidName));
+  const userManaged = (pidName) => platform === 'win32' && !readPidFile(path.join(paths.runDir, pidName));
   if (userManaged('snowluma.pid')) {
     ok('SnowLuma 由你自己管理，保留运行');
   } else {

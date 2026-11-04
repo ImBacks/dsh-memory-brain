@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// UPGRADE_PATCH：回到升级前（Linux / macOS / Windows 共用；入口 scripts/rollback.sh、rollback.bat 只是一层转发）。
+// UPGRADE_PATCH：回到升级前（Linux / Windows 共用；入口 scripts/rollback.sh、rollback.bat 只是一层转发）。
 //
 // 用法：
 //   node scripts/rollback.mjs [--yes] [<备份文件>]

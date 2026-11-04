@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// UPGRADE_PATCH：一条命令升级（Linux / macOS / Windows 共用；入口 scripts/update.sh、update.bat 只是一层转发）。
+// UPGRADE_PATCH：一条命令升级（Linux / Windows 共用；入口 scripts/update.sh、update.bat 只是一层转发）。
 //
 // 用法：
 //   node scripts/update.mjs [--yes] [--to <tag>] [--with-rag] [--dry-run] [--check]

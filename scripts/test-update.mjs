@@ -13,7 +13,7 @@ import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-// 假世界用的是 sh 替身、/tmp、/dev/null，只在 Linux / macOS 上有意义；Windows 的升级流程见 test-update-cross.mjs。
+// 假世界用的是 sh 替身、/tmp、/dev/null，只在 Linux 上有意义；Windows 的升级流程见 test-update-cross.mjs。
 if (process.platform === 'win32') {
   console.log('SKIP test-update：假世界依赖 sh 替身；Windows 见 test-update-cross.mjs');
   process.exit(0);

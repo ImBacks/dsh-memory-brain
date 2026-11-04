@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 一键启动的跨平台实现（入口：start-all.sh / start-all.bat，它们只是一层转发）。
 // Linux：DSH → QQ → SnowLuma → 等 OneBot → qq-bridge，装了 systemd 用户服务就走 systemctl。
-// Windows / macOS：QQ / SnowLuma 由用户自己打开（macOS 上 SnowLuma 没有官方包，只能连别的机器），
+// Windows：QQ / SnowLuma 由用户自己打开，
 // 本脚本负责 config、DSH 预设 / MCP、连 DSH、等 OneBot、起桥接。具体实现见 src/runtime/orchestrator.mjs。
 //
 // 用法：

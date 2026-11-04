@@ -1,4 +1,4 @@
-# 真机复现清单（v0.5.0 三端合并）
+# 真机复现清单（v0.5.0 Linux / Windows 合并）
 
 CI 和无界面探测能证明的都已经证明了。下面这些**只有真机才能下结论**，按优先级排。结论写回这份文件。
 
@@ -44,9 +44,15 @@ CI 的 runner 是 Windows Server，**没覆盖**这些，真机请确认：
 - [ ] 2.3 起第一次运行要在 WebUI 同意协议（`SNOWLUMA_ACCEPT_EULA` 由使用者本人决定，脚本不替他同意；等待 OneBot 时会提示）
 - [ ] `@snowluma/sdk` 还在 1.x（npm 最新 2.4.0）：WS 客户端走标准 OneBot，目前没发现不兼容，要升需要单独改 `patch-snowluma-sdk.mjs`
 
-## 4. macOS
+## 4. macOS（Docker 跑 Linux 容器）
 
-SnowLuma 没有 macOS 包，所以 macOS 上只能跑「桥接 + DSH」，QQ + SnowLuma 在别的机器上（`config.json` 的 `snowluma.httpUrl` / `wsUrl` 指过去，token 手填）。单元测试和 `start-all.sh` 冒烟在 CI 上跑，**完整收发链路没跑过**。
+macOS 不做原生适配，README 让用户用 Docker 跑 Linux 容器。项目不提供现成镜像，**这条路没有完整跑过**（QQ 扫码要图形桌面，SnowLuma 要 `SYS_PTRACE`）。有用户跑通后把坑写回 README。
+
+## 6. 记忆服务遗忘的偶发残留
+
+CI 的 macOS job 上出现过一次：`test_forget_key_removes_l2_and_leaves_group_alone` 遗忘后，原始字节扫描仍读到已删摘要。逻辑层的删除断言都过了，Chroma 只存向量和过滤字段。本机整组跑 8 遍、单个用例跑 150 遍都**没复现**，所以残留在哪个文件没有定论。
+
+已做的是加固，不是确证的修复：遗忘后 `VACUUM` 重写整个库（`secure_delete` 不保证页内未分配区域干净）、确认 `wal_checkpoint(TRUNCATE)` 真的截断。如果 Linux / Windows 的 CI 再红，断言信息现在会直接列出含明文的文件。
 
 ## 5. 线上 `~/qq-bridge` 还没动
 

@@ -1,4 +1,4 @@
-# 统一换行：源码/脚本/文档在 Linux、macOS、Windows 上都按 LF 检出。
+# 统一换行：源码/脚本/文档在 Linux、Windows 上都按 LF 检出。
 # 为什么必须显式声明：Windows 默认 core.autocrlf=true，没有这个文件时 .sh 会被检出成
 # CRLF（Git Bash 执行时报 `$'\r': command not found`），生成器写 LF 再与磁盘逐字节比较的
 # 测试（test-agent-preset-patches）也会失败。

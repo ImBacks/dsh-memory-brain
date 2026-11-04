@@ -7,7 +7,7 @@
 
 | 需要 | 版本 | 说明 |
 | --- | --- | --- |
-| Windows | 10 / 11 | 大量依赖 Windows 的 ACL、控制台编码与进程行为；Linux / macOS 不在支持范围 |
+| Windows | 10 / 11 | Windows 与 Linux 都在支持范围；macOS 不做原生适配，请用 Docker 跑 Linux 容器 |
 | Node.js | **>= 22.13** | 见 `package.json` 的 `engines` |
 | npm | 随 Node | 仓库带 `package-lock.json`，请用它锁定版本 |
 

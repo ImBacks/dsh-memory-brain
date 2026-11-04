@@ -2,7 +2,7 @@
 // CI：用真实的 DSH 核对 QQ 预设能不能注册、会话能不能建起来。
 //
 //   node scripts/ci-dsh-compat.mjs             # PATH 里的 dsh，web profile
-//   node scripts/ci-dsh-compat.mjs --desktop   # 已安装的桌面版：按它 main 进程的方式无界面拉起 Host（Windows / macOS）
+//   node scripts/ci-dsh-compat.mjs --desktop   # 已安装的桌面版：按它 main 进程的方式无界面拉起 Host（Windows）
 //
 // 全部用隔离的 DSH_HOME，不碰本机已有的 ~/.dsh；不需要模型密钥，不发真实请求。
 import fs from 'node:fs';
@@ -52,11 +52,9 @@ function startHost() {
   }
   // 桌面版不让 CLI 用 desktop profile（「managed exclusively by the Electron application」），
   // 所以照 apps/desktop/src/host-process.ts 的参数和 IPC 直接拉 Host，不开窗口。
-  let exe;
-  if (process.platform === 'win32') exe = resolveElectronShim(cli)?.command;
-  else exe = path.resolve(path.dirname(cli), '..', '..', '..', '..', 'MacOS', 'DeepSeek Harness');
+  const exe = resolveElectronShim(cli)?.command;
   if (!exe || !fs.existsSync(exe)) { console.error('找不到桌面版主程序'); process.exit(1); }
-  const resources = process.platform === 'win32' ? path.join(path.dirname(exe), 'resources') : path.resolve(path.dirname(exe), '..', 'Resources');
+  const resources = path.join(path.dirname(exe), 'resources');
   const runtimeDir = path.join(resources, 'app.asar', 'dsh');
   const entry = path.join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js');
   const profileDir = path.join(process.env.DSH_HOME, 'profiles', 'desktop');

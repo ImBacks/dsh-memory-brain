@@ -1,4 +1,4 @@
-// UPGRADE_PATCH：scripts/update.mjs 与 scripts/rollback.mjs 共用的部分（Linux / macOS / Windows）。
+// UPGRADE_PATCH：scripts/update.mjs 与 scripts/rollback.mjs 共用的部分（Linux / Windows）。
 //
 // 只用 Node 内置模块：第一次升级时仓库里还没装新依赖，rollback 回到的老提交里也可能没有这些文件。
 // ESM 在进程启动时就读完了，所以运行中 git 把这几个文件换掉、甚至删掉都不影响这次执行，
@@ -54,8 +54,8 @@ export function createContext(repoGuess) {
     process.env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
   }
   // 只有 Linux 才由 start-all 替用户拉起 QQ / SnowLuma，也只有 Linux 有 systemd。
-  // Windows / macOS 上这两个归用户自己管，start-all 不会动它们。测试的假世界按 Linux 走。
-  const linuxFlow = isTest ? process.env.QQB_TEST_LINUX_FLOW !== '0' : process.platform === 'linux';
+  // Windows 上这两个归用户自己管，start-all 不会动它们。测试的假世界按 Linux 走。
+  const linuxFlow = isTest ? process.env.QQB_TEST_LINUX_FLOW !== '0' : process.platform !== 'win32';
   return { repo, isTest, linuxFlow, yes: false, testAnswers: isTest && process.env.QQB_TEST_ANSWERS !== undefined ? process.env.QQB_TEST_ANSWERS.split(',') : null };
 }
 
@@ -255,7 +255,7 @@ export async function waitGone(ctx, pids) {
   }
 }
 
-/** 拉起 / 停止：Linux、macOS 走根目录脚本（回滚到的老版本也认识），Windows 直接跑 Node 实现。 */
+/** 拉起 / 停止：Linux 走根目录脚本（回滚到的老版本也认识），Windows 直接跑 Node 实现。 */
 export function startAll(ctx, args = []) {
   if (process.platform === 'win32') {
     return run(process.execPath, [path.join(ctx.repo, 'scripts', 'start-all.mjs'), ...args], { cwd: ctx.repo, orig: true }).code === 0;

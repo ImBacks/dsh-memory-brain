@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// update.mjs / rollback.mjs 的三端流程：真 git、真 tar、真 node，服务用替身脚本。
-// Windows / macOS 的流程（QQ、SnowLuma 归用户管、不认 systemd）；Linux 那条路的细节在 test-update.mjs。
+// update.mjs / rollback.mjs 的 Windows 流程（QQ、SnowLuma 归用户管、不认 systemd）：真 git、真 tar、真 node，服务用替身脚本；Linux 那条路的细节在 test-update.mjs。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
