@@ -96,6 +96,28 @@ if (process.platform === 'win32') {
       assert.equal(r.status, 7);
     });
   }
+  // 控制组：旧版 start-all.bat 的写法。它证明上面这些用例测到的确实是当初的闪退，而不是碰巧都能过。
+  const OLD_BAT = [
+    '@echo off', 'chcp 65001 >nul', 'node "%~dp0scripts\\start-all.mjs" %*', 'set "QQB_EXIT=%errorlevel%"',
+    'if not defined QQB_NO_PAUSE (', '  echo %cmdcmdline% | findstr /i /c:"%~nx0" >nul && (', '    echo.',
+    '    if not "%QQB_EXIT%"=="0" echo [start-all] FAILED - read the messages above.', '    pause', '  )', ')',
+    'exit /b %QQB_EXIT%', ''
+  ].join('\r\n');
+  await test('控制组：旧写法在普通目录能 pause，在「dup (1)」里跑完 node 就关窗口（不 pause、没留言）', () => {
+    const run = (dirName) => {
+      const bat = prepare(dirName, 'start-all', 7);
+      fs.writeFileSync(path.join(path.dirname(bat), 'old.bat'), OLD_BAT);
+      const r = doubleClick(path.join(path.dirname(bat), 'old.bat'));
+      console.log(`  旧写法 [${dirName}] exit=${r.status} stdout=${JSON.stringify(r.stdout.slice(-160))} stderr=${JSON.stringify(r.stderr.slice(-160))}`);
+      return r;
+    };
+    const plain = run('old-plain');
+    assert.match(plain.stdout, /FAILED/, '普通目录下旧写法本来是能留言的');
+    const paren = run('old dup (1)');
+    assert.match(paren.stdout, /STUB-RAN/, 'node 已经跑过了');
+    assert.doesNotMatch(paren.stdout, /FAILED/, '括号目录下旧写法应该留不住错误信息');
+    assert.doesNotMatch(paren.stdout, /press any key|按任意键|请按/i, '括号目录下旧写法应该等不到 pause');
+  });
   await test('QQB_NO_PAUSE=1 不 pause', () => {
     const r = doubleClick(prepare('nopause', 'start-all', 0), { QQB_NO_PAUSE: '1' });
     assert.doesNotMatch(r.stdout, /press any key|按任意键|请按/i);
