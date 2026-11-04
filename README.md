@@ -2,7 +2,7 @@
 
 **Brain with External Multi-Layer Memory** —— 让 AI 像一个真实的朋友一样待在你的 QQ 里：记得你说过的事、会慢慢忘、有自己的脾气，还会主动来找你。
 
-基于 [Derpyu520/qq-bridge](https://github.com/Derpyu520/qq-bridge)（MIT）改造，大脑用 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，QQ 收发靠 [SnowLuma](https://github.com/SnowLuma/SnowLuma)。
+基于 [Derpyu520/qq-bridge](https://github.com/Derpyu520/qq-bridge) 改造，大脑用 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，QQ 收发靠 [SnowLuma](https://github.com/SnowLuma/SnowLuma)。
 
 **中文** | [English](README.en.md)
 
@@ -151,7 +151,37 @@ cp config.example.json config.json
 
 把本项目的聊天模式和工具装进 DSH，**然后重启 DSH**（回到第 2 步那个终端，按 `Ctrl + C`，再执行一次 `dsh web --no-open`）：
 
-```bash
+### 1. 获取项目
+
+在 PowerShell 中运行：
+
+```powershell
+git clone https://github.com/Derpyu520/qq-bridge.git
+cd qq-bridge
+npm install
+Copy-Item config.example.json config.json
+```
+
+默认分支 `main` 为正式发布线；`dev` 用于开发与测试。
+
+### 2. 填写配置
+
+编辑 `config.json`，至少核对这些字段：
+
+| 字段 | 填写内容 |
+| --- | --- |
+| `dsh.baseUrl` | DSH Web 地址，默认 `http://127.0.0.1:3080`；模型选择需与 DSH 中可用的配置一致 |
+| `dsh.provider` / `model` / `reasoningEffort` | 模型提供方、模型名与思考强度；强度可使用 DSH 模型目录公布的档位，设为 `none` 表示不下发该字段、跟随模型默认 |
+| `snowluma.wsUrl` / `httpUrl` | OneBot WebSocket / HTTP 地址，示例分别为 `ws://127.0.0.1:3001` / `http://127.0.0.1:3000`，不要混用端口 |
+| `snowluma.accessToken` / `homeDir` | 按实际配置填写令牌与 SnowLuma 安装目录；HTTP、WS 令牌不同时，需能从该目录发现各自令牌 |
+| `ownerQQ` | 你的管理员 QQ 号 |
+| `allow.private` / `allow.groups` | 允许接入的 QQ 号 / 群号；默认空白名单不响应任何会话 |
+
+同机运行时，`dsh.authToken` 通常留空，由桥接使用本机 DSH 凭据完成鉴权。完整配置与连接排查见[安装指南](docs/guides/DSH_SETUP.md)。
+
+### 3. 安装 DSH 插件
+
+```powershell
 node scripts/setup-dsh.mjs
 ```
 
@@ -416,8 +446,8 @@ npm test
 
 ## 🙏 致谢与许可
 
-- 上游项目 [Derpyu520/qq-bridge](https://github.com/Derpyu520/qq-bridge)（MIT），本仓库保留其全部提交历史与版权声明
+- 上游项目 [Derpyu520/qq-bridge](https://github.com/Derpyu520/qq-bridge)，本仓库保留其全部提交历史与版权声明
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)、[SnowLuma](https://github.com/SnowLuma/SnowLuma)、[Chroma](https://github.com/chroma-core/chroma)、[llama.cpp](https://github.com/ggml-org/llama.cpp)、[Qwen3-Embedding](https://huggingface.co/Qwen)
-- 许可证：[MIT](LICENSE)
+- 许可证：[PolyForm Noncommercial 1.0.0](LICENSE)（禁止商用）。上游 `v0.2.1-r1` 之后改用此许可，本仓库合入了之后的代码，因此一起遵守；详见 [NOTICE.md](NOTICE.md)
 
 > **合规提醒**：SnowLuma 是独立第三方项目，与腾讯 / QQ 无隶属关系。本项目仅供学习与技术研究，使用前请阅读 SnowLuma 的 EULA 与《QQ 用户协议》，风险自负。

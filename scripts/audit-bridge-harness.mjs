@@ -1,3 +1,5 @@
+import { resolveInstalledPreset, synchronizePreset } from '../src/preset-sync.js';
+import { renderPatch } from './build-agent-preset-patches.mjs';
 // Execute the real bridge initialization/functions against temporary files and fake peers.
 // No production config, QQ connection, DSH process, or persistent home is accessed.
 import fs from 'node:fs';
@@ -20,7 +22,9 @@ import * as modelPrices from '../src/model-prices.js';
 import * as tokenLedger from '../src/token-ledger.js';
 import * as voiceLib from '../src/send-voice-lib.js';
 import * as presetPrompt from '../src/preset-prompt.js';
+import * as roleCard from '../src/role-card.js';
 import * as stateAcl from '../src/state-acl.mjs';
+import { persistSnowLumaEndpoint, persistToken } from '../src/snowluma-conn.js';
 import { unwrap, createTurnCollector } from '../src/dsh-client.js';
 // 本地新增模块（OWN_LIFE_PATCH / TTS_API_PATCH / LTM_PATCH）：bridge.js 的顶层 import 会被剥掉，必须在这里注入。
 import { createOwnLife } from '../src/own-life.js';
@@ -96,7 +100,7 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, typeof content === 'string' ? content : JSON.stringify(content));
   }
-  const calls = { created: [], archived: [], sent: [], prompts: [], follows: [], cancelled: [], images: [], faces: [], http: [], ragExec: [] };
+  const calls = { created: [], archived: [], sent: [], prompts: [], follows: [], forgotten: [], cancelled: [], images: [], faces: [], http: [], responded: [], ragExec: [] };
   // APIHUB_PATCH：rag-control 的默认 execFile 会调真的 systemctl；测试里只记录调用、一律回成功。
   // 默认按「装了 systemd 单元」处理（`systemctl --user cat` 退出码 0），要测 nohup / script 模式
   // 的用例可以改 globals.defaultRagExec 覆盖。
@@ -141,7 +145,7 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
   };
   const success = (value) => ({ result: { ok: true, value } });
   const api = {
-    events: { follow: (id) => calls.follows.push(id) },
+    events: { follow: (id) => calls.follows.push(id), forget: (id) => calls.forgotten.push(id) },
     // settings.describe 的默认桩：没有 qq-mode 命名空间 ⇒ refreshMode() 回退到本地 mode.json。
     // 测试可覆盖它来验证「DSH 设置里的空 ownerQQ 不得覆盖 config.json」等契约。
     settings: {
@@ -153,11 +157,13 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
       archiveSession: async ({ sessionId }) => { calls.archived.push(sessionId); return success({}); },
     },
     sessions: {
-      create: async (params) => { calls.created.push(params); return success({ sessionId: `fixture-${calls.created.length}` }); },
+      // 真实的 DSH 会采用调用方预分配的 sessionId（host-apiproxy：`payload.sessionId ?? session-<uuid>`），
+    // 夹具必须同样照做，否则「执行期会话绑定」在测试里永远看不到绑定形态的 id。
+    create: async (params) => { calls.created.push(params); return success({ sessionId: params?.sessionId ?? `fixture-${calls.created.length}` }); },
       selectModel: async () => success({ selected: { provider: 'fixture', model: 'fixture' } }),
       prompt: async (params) => { calls.prompts.push(params); return success({}); },
     },
-    respond: async () => success({}),
+    respond: async (params) => { calls.responded.push(params); return success({}); },
     stopSessionWork: async (sessionId) => { calls.cancelled.push(sessionId); return { removed: 0 }; },
     callUnary: async (method, params) => { calls.cancelled.push({ method, params }); return success({ accepted: true }); },
   };
@@ -205,14 +211,28 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
   source = source.replaceAll('import.meta.url', JSON.stringify(pathToFileURL(path.join(temp, 'src/bridge.js')).href));
   source = source.slice(0, source.indexOf("process.on('SIGINT'"));
   source = source.replace('  bot.onPrivateMessage(async (event) => {', `
+  const setStickerEntries = (next) => { stickerEntries = Array.isArray(next) ? next : []; };
+  const getStickerEntries = () => stickerEntries;
   return {
-    ensureSession, ensureSlangLearnerSession, resolvePresetName, deliverPrompt, drainPromptQueue,
-    sendToQQ, sendStickerV2, handleIncoming, startConsoleServer, cfg, state, api, promptQueues,
+    syncInstalledPreset, installedPresetYaml, ensureSession, ensureSlangLearnerSession, runSlangResearch, resolvePresetName, deliverPrompt, drainPromptQueue,
+    applyHealedTokens, reportTurnFailure, recordVoiceSentV2, rediscoverDshBase,
+    getSlangEntries: () => slangEntries,
+    completeLearnerTurn(sessionId, output) {
+      const waiters = learnerWaiters.get(sessionId) ?? [];
+      const waiter = waiters.shift();
+      if (!waiter) return false;
+      if (!waiters.length) learnerWaiters.delete(sessionId);
+      clearTimeout(waiter.timer);
+      waiter.resolve(output);
+      return true;
+    },
+    sendToQQ, sendBurstToQQ, sendMessagesV2, sendStickerV2, handleIncoming, handleRecallNotice, handlePokeNotice, handlePendingAnswer, pending, startConsoleServer, cfg, state, api, promptQueues, forwardMediaRefs, rememberForwardMedia, forwardMediaKey, setStickerEntries, getStickerEntries,
     getSocialV2State, appendSocialV2Message, recordSentMessagesV2,
     buildWakePromptV2, buildWakeSnapshotV2, sendWakePromptV2, socialV2,
     syncStickerLibrary, listStickersForV2, getStickerImageData,
     refreshMode, modeAllowed, trackTurnEvent, replayPendingWakeReasonsV2,
-    collectors, setupSleepTimerV2,
+    collectors, reverse, setupSleepTimerV2,
+    handleSessionSnapshot, replayDeferredDeliveries, deliveryCursors, sessionPolicy,
     getInitialPrompt, setInitialPrompt, loadInitialPrompts, formatInitialPromptV2,
     initialPrompts, initialPromptMaxChars,
     extractMediaFromSegments, segmentsToText, fetchOneBotImage, fetchMediaData, resolveMediaList,
@@ -244,7 +264,7 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
     flushQueue, retireSession,
     voiceCfg, voiceLibrary, resolveVoicePathForV2, resolveVoicePathForOperator,
     voiceBudgetCheck, sendVoiceV2, sendVoiceForV2, assertOutboundAuditOk,
-    setMode(value) { currentMode = value; },
+    setMode(value) { currentMode = value; modeKnown = true; },
     setReady(value) { dshReady = value; },
     setPresets(value) { dshPresetIds = value; dshDefaultPreset = 'standard'; },
     resetEpoch() { sessionEpoch++; },
@@ -289,9 +309,12 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
     createRoleStore, effectivePresetYaml, readOverride, writeOverride, removeOverride, buildPatches, createUpdateCheck,
     // BRAIN_PATCH：globals 里可以覆盖（例如换成回放桩）。
     createBrainFeed, createBrainReplay,
-    ...roleCard,
+    // DSH 端点自愈（#63）只在探活失败时调用；夹具里给一个桩，避免测试真的去扫本机端口。
+    // 需要验证自愈逻辑的用例可以用 globals 覆盖它。
+    discoverDshBaseUrl: async () => null,
+    resolveInstalledPreset, synchronizePreset, renderPatch, persistSnowLumaEndpoint, persistToken,
     ...markdown, ...sensitive, ...wait, ...safeFetch, ...forward, ...slang, ...sticker,
-    ...modelPrices, ...tokenLedger, ...voiceLib, ...stateAcl, ...presetPrompt,
+    ...modelPrices, ...tokenLedger, ...voiceLib, ...stateAcl, ...presetPrompt, ...roleCard,
     // 桥接的出图出口会调归一化（体积/动图抽帧）：VM 里必须能拿到这几个函数。
     normalizeImageForModel: mediaNormalize.normalizeImageForModel,
     sniffImage: mediaNormalize.sniffImage,
@@ -322,8 +345,12 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
   // Execute the pure model view in the bridge realm. Its plain-object checks
   // should see the same prototypes as real bridge messages, just as in Node.
   const modelViewSource = fs.readFileSync(path.join(root, 'src/qq-model-view.js'), 'utf8').replace(/^export /gm, '');
-  vm.runInContext(`Object.assign(globalThis, (() => { ${modelViewSource}\nreturn { compactModelMessage, compactModelData, serializeModelData, describeAge }; })());`, context);
-  vm.runInContext(source + '\nglobalThis.auditReady = main();', context);
+  vm.runInContext(`Object.assign(globalThis, (() => { ${modelViewSource}\nreturn { compactModelMessage, compactModelData, serializeModelData, describeAge, sanitizeUntrustedText }; })());`, context);
+  // 严格模式：bridge.js 在生产里是 ESM（严格），而 vm 默认是 sloppy —— 后者会把
+  // 「赋值给未声明变量」变成隐式全局，把 ReferenceError 藏起来（真的因此漏过一个：
+  // #83 把模块级 sendChain 换成按会话 Map 后，语音/表情发送里的两处赋值没写 let，
+  // 测试全绿、生产必炸）。夹具必须与生产同模式。
+  vm.runInContext('"use strict";\n' + source + '\nglobalThis.auditReady = main();', context);
   const bridge = await context.auditReady;
   bridge.setPresets(['standard', 'qq-chat', 'qq-chat-v2']);
   bridge.setReady(true);

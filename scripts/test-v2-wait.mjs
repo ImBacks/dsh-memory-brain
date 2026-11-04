@@ -78,7 +78,7 @@ try {
   const maxMs = Number(cfg.socialV2?.wait?.maxMs) || 0;
   assert(maxMs >= END_ROUND_WAIT_MAX_MS, `wait.maxMs=${maxMs} >= 600000`);
 } catch (error) {
-  console.error('❌ 读取 config.json 失败:', error.message);
+  console.error('❌ 读取 config.example.json 失败:', error.message);
   failed = 1;
 }
 

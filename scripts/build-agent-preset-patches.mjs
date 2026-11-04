@@ -191,7 +191,9 @@ export function buildPatches({ check = false, log = () => {}, root = REPO_ROOT }
     const file = patchFileFor(name, root);
     const content = renderPatch(name, { root });
     const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
-    const changed = current !== content;
+    // Git may check text files out as CRLF on Windows; line endings are not
+    // preset drift. YAML string escapes remain intact in this comparison.
+    const changed = current?.replace(/\r\n/g, '\n') !== content;
     if (changed && !check) {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, content, 'utf8');
