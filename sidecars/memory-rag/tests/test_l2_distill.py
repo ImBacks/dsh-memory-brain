@@ -530,7 +530,8 @@ def test_forget_key_removes_l2_and_leaves_group_alone(stack, cfg, state):
     if exclude_chroma:
         print("SKIP Windows Chroma raw-byte scan: Chroma 1.5.9 Rust segment may not compact immediately after delete; logical deletion is asserted above")
     for word in (SUMMARY_WORD_PRIVATE, "蓝鲸邮票册"):
-        assert word.encode("utf-8") not in blob, f"遗忘后派生库里仍能读到 {word}"
+        hits = [str(p.relative_to(cfg["paths"].rag)) for p in cfg["paths"].rag.rglob("*") if p.is_file() and word.encode("utf-8") in p.read_bytes()]
+        assert word.encode("utf-8") not in blob, f"遗忘后派生库里仍能读到 {word}：{hits}"
     # 阴性对照：群里的东西还在
     assert SUMMARY_WORD_GROUP.encode("utf-8") in blob
 

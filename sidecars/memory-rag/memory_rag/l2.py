@@ -774,5 +774,7 @@ class L2:
             cur.execute("DELETE FROM distill_state WHERE chunk_id NOT IN (SELECT chunk_id FROM chunks)")
             _delete_orphan_entities(cur)
             self.conn.commit()
-            self.db._purge()
+            # 现在 _purge 带 VACUUM，这条路径每轮索引都会走，没删到摘要就不用重写整个库。
+            if ids:
+                self.db._purge()
         return ids

@@ -8,14 +8,18 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from typing import Iterable, Sequence
 
 import jieba
+
+logger = logging.getLogger(__name__)
 
 jieba.setLogLevel(60)
 
@@ -184,7 +188,19 @@ class ChunkDB:
         self.conn.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('optimize')")
         self.conn.execute("INSERT INTO summaries_fts(summaries_fts) VALUES('optimize')")
         self.conn.commit()
-        self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        # secure_delete 只清零被释放的单元；B 树重排页面时，页内未分配区域可能留着旧单元的字节，
+        # 留不留取决于键的随机分布（CI 上偶发读到已遗忘的摘要）。只有 VACUUM 重写整个文件才算干净。
+        self.conn.execute("VACUUM")
+        self._truncate_wal()
+
+    def _truncate_wal(self) -> None:
+        """把 WAL 截断成 0 字节。检查点被别的读者挡住时 SQLite 不报错，只在结果里写 busy=1，所以要看结果重试。"""
+        for _ in range(40):
+            row = self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            if row is not None and row[0] == 0:
+                return
+            time.sleep(0.05)
+        logger.warning("wal_checkpoint(TRUNCATE) 一直被挡住：WAL 里可能还留着已删内容，下一次检查点会清掉")
 
     def clear(self, keep_l2: bool = False) -> None:
         """RAG_PATCH（P3）：默认连 L2 表一起清空；全量重建时传 keep_l2=True，摘要留着靠对账挂回。"""
@@ -198,10 +214,6 @@ class ChunkDB:
                 clear_rows(cur)
             self.conn.commit()
             self._purge()
-            # VACUUM 不能在事务里跑：_purge 已经 commit 过了，这里可以安全执行。
-            # 它把主库重写成新文件，彻底不留旧页；随后再把 VACUUM 自己写出的 WAL 截断一次。
-            self.conn.execute("VACUUM")
-            self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     def delete_key(self, key: str) -> int:
         """RAG_PATCH（P2）：删掉一个会话的全部块（块表 + FTS），返回删掉的块数。
