@@ -11,9 +11,9 @@ CI 和无界面探测能证明的都已经证明了。下面这些**只有真机
 | DSH 源码 `rc.3 → rc.5 → 0.2.2-alpha.3`：`packages/preset/agent-preset/src` | 没有改动，注册机制没变 |
 | npm 版 `dsh web`：rc.5、0.2.2-alpha.3（全新 profile，隔离 HOME） | `qq-chat` / `qq-chat-v2` 都注册上，能建会话 |
 | 桌面版 rc.5 的真实 Host（macOS，无界面按 main 进程的参数拉起，全新 profile） | 同上 |
-| 官方 Windows 安装包（CI `dsh-desktop-windows`） | 看该 job 的结果 |
+| 官方 Windows 安装包 `dsh-latest-windows-x64.exe`（0.2.1-rc.5，CI `dsh-desktop-windows`，静默安装后按 main 进程的方式拉起 Host，全新 profile） | 同上：`agentPresets/list` 有 `qq-chat`、`qq-chat-v2`，`session/create` 成功 |
 
-因此怀疑点不在注册机制，而在**用户那台机器的 profile 状态**。真机上按顺序查：
+所以在全新 profile 上**没有复现**，怀疑点不在注册机制，而在**反馈用户那台机器的 profile 状态**（升级过来的旧 profile、用过恢复、挪过目录）。CI 没有覆盖的是：带旧 profile 升级、真正打开 Electron 窗口。真机上按顺序查：
 
 1. 运行 `start-all.bat`，看新增的这一行：`DSH 已注册 QQ 预设` 还是 `DSH 里没有 QQ 预设（缺 …）`。没注册时它会接着打印磁盘诊断，把整段发回来，还有 `%USERPROFILE%\.ai-companion-run\start-all.log`。
 2. 桌面版**「恢复 / 禁用所有插件」**会把第三方 bundle 从 `profiles\desktop\package.json` 摘掉、把 `cordis.patch.yml` 改名成 `.bak-*`（源码 `sanitizeProfile`）。看 `dsh.profile.bundles` 里还有没有 `qq-agent-presets`。
