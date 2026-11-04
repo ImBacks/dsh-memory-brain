@@ -457,8 +457,10 @@ CI 在 Linux、Windows 上跑单元测试和 memory-rag 测试，用真实的 DS
 
 ## 🙏 致谢与许可
 
-- 上游项目 [Derpyu520/qq-bridge](https://github.com/Derpyu520/qq-bridge)，本仓库保留其全部提交历史与版权声明
+- 上游项目，特别鸣谢 [Derpyu520/qq-bridge](https://github.com/Derpyu520/qq-bridge)，本仓库保留其全部提交历史与版权声明
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)、[SnowLuma](https://github.com/SnowLuma/SnowLuma)、[Chroma](https://github.com/chroma-core/chroma)、[llama.cpp](https://github.com/ggml-org/llama.cpp)、[Qwen3-Embedding](https://huggingface.co/Qwen)
+
 - 许可证：[PolyForm Noncommercial 1.0.0](LICENSE)（禁止商用）。上游 `v0.2.1-r1` 之后改用此许可，本仓库合入了之后的代码，因此一起遵守；详见 [NOTICE.md](NOTICE.md)
 
 > **合规提醒**：SnowLuma 是独立第三方项目，与腾讯 / QQ 无隶属关系。本项目仅供学习与技术研究，使用前请阅读 SnowLuma 的 EULA 与《QQ 用户协议》，风险自负。
+> 自愿打赏支持项目<img width="888" height="1128" alt="ebece713b684bb0a5454942719e31d7a" src="https://github.com/user-attachments/assets/37444290-ef1c-45cb-8ecd-cc2049d7f2fb" />
