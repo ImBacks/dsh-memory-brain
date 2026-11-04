@@ -13,7 +13,7 @@
 // 判定方式：候选地址必须能用**同一套离线铸造 Cookie**跑通一次真实的
 // `settings/describe` 才认账。绝不因为「这个本地端口开着」就切过去——
 // 那会把桥接的请求送给用户机器上任何一个恰好占着端口的本地服务。
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
@@ -167,7 +167,7 @@ export async function discoverDshBaseUrl({ current, log = () => {} } = {}) {
 
 // 手动排障入口：`node src/dsh-endpoint.js` 打印「现在真正在跑的 DSH 地址」。
 // 用途：桌面版重启后想确认 config.json 里的 dsh.baseUrl 是不是过期了。
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const configured = (() => {
     try {
       const file = JSON.parse(readFileSync(new URL('../config.json', import.meta.url), 'utf8'));

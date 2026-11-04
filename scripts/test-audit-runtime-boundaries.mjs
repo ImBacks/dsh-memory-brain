@@ -17,7 +17,7 @@ const check = (name, fn) => {
   passed += 1;
   console.log(`PASS ${name}`);
 };
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'qqb-runtime-boundaries-'));
+const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'qqb-runtime-boundaries-')));
 try {
   check('createSlangEntry preserves the submitting conversation scope', () => {
     const entry = createSlangEntry({ content: '测试梗', meaning: 'A 的私有含义', status: 'confirmed', scope: 'group:101' });

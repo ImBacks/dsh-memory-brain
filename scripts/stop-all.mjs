@@ -1,15 +1,11 @@
 #!/usr/bin/env node
-// 按反序停止：qq-bridge → memory-rag → embedding → SnowLuma → QQ → DSH（DSH 默认保留）。
-//
-// 用法：
-//   node scripts/stop-all.mjs          # 停桥接、向量记忆、SnowLuma、QQ（不改 RAG 开关）
-//   node scripts/stop-all.mjs --all    # 连 DSH 一起停
-//   node scripts/stop-all.mjs --rag    # 关掉向量记忆：写 enabled=false，再停 memory-rag（自带时连 embedding）
+// 一键停止的跨平台实现（入口：stop-all.sh / stop-all.bat，它们只是一层转发）。
+// 用法：node scripts/stop-all.mjs [--all] [--rag]
 import { runStop } from '../src/runtime/orchestrator.mjs';
+import { mirrorOutputToLog } from './lib/entry-guard.mjs';
 
-runStop()
-  .then((code) => { process.exitCode = code; })
-  .catch((error) => {
-    console.error(`[stop] 停止失败：${error?.stack ?? error}`);
-    process.exitCode = 1;
-  });
+mirrorOutputToLog('stop-all');
+runStop().then((code) => { process.exitCode = code; }).catch((error) => {
+  console.error(`[stop] 停止失败：${error?.stack ?? error}`);
+  process.exitCode = 1;
+});

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// 一键启动的顺序与旧 start-all.sh 一致：DSH → QQ → SnowLuma → 等 OneBot → qq-bridge。
-// Windows 上 QQ / SnowLuma 由用户自己打开并注入，本脚本只负责 DSH + 桥接（见 README.windows.md）。
-// 具体实现见 src/runtime/orchestrator.mjs（Linux systemd / Windows PID 两条路）。
+// 一键启动的跨平台实现（入口：start-all.sh / start-all.bat，它们只是一层转发）。
+// Linux：DSH → QQ → SnowLuma → 等 OneBot → qq-bridge，装了 systemd 用户服务就走 systemctl。
+// Windows / macOS：QQ / SnowLuma 由用户自己打开（macOS 上 SnowLuma 没有官方包，只能连别的机器），
+// 本脚本负责 config、DSH 预设 / MCP、连 DSH、等 OneBot、起桥接。具体实现见 src/runtime/orchestrator.mjs。
 //
 // 用法：
 //   node scripts/start-all.mjs                  # 全部启动（RAG 按 config.json 的 memoryRag.enabled）
@@ -16,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { checkNodeVersion, mirrorOutputToLog } from './lib/entry-guard.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -39,14 +41,16 @@ function installDependencies() {
   return true;
 }
 
-if (!dependenciesInstalled() && !installDependencies()) {
-  process.exitCode = 1;
-} else {
+async function main() {
+  mirrorOutputToLog('start-all');
+  if (!checkNodeVersion()) return 1;
+  if (!dependenciesInstalled() && !installDependencies()) return 1;
+  // 编排器的 import 失败（依赖残缺、Node 太旧）也要留下可读的报错，不能只闪一下。
   const { runStart } = await import(pathToFileURL(path.join(ROOT, 'src', 'runtime', 'orchestrator.mjs')).href);
-  await runStart()
-    .then((code) => { process.exitCode = code; })
-    .catch((error) => {
-      console.error(`[start] 启动失败：${error?.stack ?? error}`);
-      process.exitCode = 1;
-    });
+  return runStart();
 }
+
+main().then((code) => { process.exitCode = code; }).catch((error) => {
+  console.error(`[start] 启动失败：${error?.stack ?? error}`);
+  process.exitCode = 1;
+});

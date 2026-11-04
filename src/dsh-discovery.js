@@ -12,6 +12,7 @@
 // 进程列表与端口都用系统自带命令取（Windows: PowerShell CIM + Get-NetTCPConnection，
 // 退回 netstat；macOS/Linux: ps + lsof），只走 execFile 数组参数，不经 shell。
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { NodeApiClient, resolveDshHome } from './dsh-client.js';
 
@@ -250,6 +251,64 @@ export async function checkDshModels(baseUrl, { timeoutMs = 8000, auth } = {}) {
   } catch {
     return { ok: null, providers: [] };
   }
+}
+
+/** 桥接依赖的两个预设；缺了就拒绝建群聊 / 仿真会话。 */
+export const REQUIRED_PRESETS = ['qq-chat', 'qq-chat-v2'];
+
+/** 问 DSH：预设注册上了没有。ok=null 表示查询本身失败（不等于没注册）。 */
+export async function checkDshPresets(baseUrl, { timeoutMs = 8000, auth } = {}) {
+  try {
+    const api = new NodeApiClient(baseUrl, timeoutMs, auth ?? {});
+    const response = await api.callUnary('agentPresets/list', {}, AbortSignal.timeout(timeoutMs));
+    const presets = response?.result?.value?.presets;
+    if (!Array.isArray(presets)) return { ok: null, ids: [], missing: [] };
+    const ids = presets.map((p) => String(p?.id ?? ''));
+    const missing = REQUIRED_PRESETS.filter((id) => !ids.includes(id));
+    return { ok: missing.length === 0, ids, missing };
+  } catch {
+    return { ok: null, ids: [], missing: [] };
+  }
+}
+
+/**
+ * 预设没注册时看磁盘：把 DSH 跳过 bundle 的几种常见原因逐条查一遍（只读）。
+ * 桌面版的「恢复」会把第三方 bundle 从 profile 里摘掉；更新也可能让链接失效。
+ * @returns 给用户看的若干行诊断。
+ */
+export function diagnosePresetProfile({ home, profile, fsImpl = fs }) {
+  const dir = path.join(home, 'profiles', profile);
+  const lines = [`profile：${dir}`];
+  const manifestFile = path.join(dir, 'package.json');
+  let manifest;
+  try {
+    manifest = JSON.parse(fsImpl.readFileSync(manifestFile, 'utf8'));
+  } catch (error) {
+    lines.push(`读不了 package.json（${error?.code ?? error?.message}）：重新运行 node scripts/setup-dsh.mjs ${profile}`);
+    return lines;
+  }
+  const bundles = manifest?.dsh?.profile?.bundles;
+  if (!Array.isArray(bundles) || !bundles.includes('qq-agent-presets')) {
+    lines.push('dsh.profile.bundles 里没有 qq-agent-presets（桌面版的「恢复 / 禁用插件」会把它摘掉）：重新运行 node scripts/setup-dsh.mjs，再完全重启 DSH');
+  }
+  const link = path.join(dir, 'node_modules', 'qq-agent-presets');
+  const pkgFile = path.join(link, 'package.json');
+  let pkg = null;
+  try {
+    pkg = JSON.parse(fsImpl.readFileSync(pkgFile, 'utf8'));
+  } catch (error) {
+    lines.push(`${link} 读不到 package.json（${error?.code ?? error?.message}）：链接失效或 DSH 更新时被清掉了，重新运行 node scripts/setup-dsh.mjs`);
+  }
+  const patches = pkg?.dsh?.bundle?.patch;
+  if (pkg && !Array.isArray(patches)) lines.push('qq-agent-presets/package.json 里没有 dsh.bundle.patch');
+  for (const rel of Array.isArray(patches) ? patches : []) {
+    if (!fsImpl.existsSync(path.join(link, rel))) lines.push(`bundle patch 不存在：${rel}（运行 node scripts/build-agent-preset-patches.mjs）`);
+  }
+  if (pkg?.engines?.dsh || Object.keys(pkg?.peerDependencies ?? {}).some((name) => name.startsWith('@deepseek-ai/dsh'))) {
+    lines.push('qq-agent-presets 声明了 dsh 版本要求：版本不符时 DSH 会跳过它');
+  }
+  if (lines.length === 1) lines.push('磁盘上看 bundle 都正常：DSH 可能还没重启，或启动时跳过了它（看 DSH 的启动日志里 disabling / skipped 的行）');
+  return lines;
 }
 
 /** 没有可用模型时给用户的操作提示（按 DSH 版本区分）。 */

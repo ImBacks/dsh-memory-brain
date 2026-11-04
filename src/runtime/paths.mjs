@@ -139,6 +139,8 @@ export function defaultQqBin({ platform = process.platform, env = process.env, f
   return candidates.find((file) => isFile(file, fsImpl)) || candidates[0] || '';
 }
 
+const MAC_DSH_CLI = 'DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh';
+
 /**
  * 找 dsh CLI。
  *
@@ -155,6 +157,10 @@ export function findDshCli({ env = process.env, platform = process.platform, hom
   if (explicit) return explicit;
   const fromPath = findExecutable('dsh', { env, platform, fsImpl });
   if (fromPath) return fromPath;
+  if (platform === 'darwin') {
+    // 桌面版在 macOS 上不进 PATH。
+    return [path.posix.join('/Applications', MAC_DSH_CLI), path.posix.join(home, 'Applications', MAC_DSH_CLI)].find((file) => fsImpl.existsSync(file)) ?? '';
+  }
   if (platform !== 'win32') return '';
 
   const bin = (root) => path.win32.join(root, 'DeepSeek Harness', 'resources', 'runtime', 'cli', 'bin', 'dsh.cmd');

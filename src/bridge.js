@@ -2187,7 +2187,7 @@ async function main() {
           atomicWriteJson(BRAIN_CONFIG_FILE, file);
         } catch (error) {
           log(`[brain] 开关保存失败（${error?.code ?? 'error'}）`);
-          sendJson({ ok: false, error: '写 config.json 失败，开关没有改变' }, 500);
+          sendJson({ ok: false, error: '写 config.json 失败，开关没有改变' }, 500, { safeError: true });
           return;
         }
         brainEnabledCache = { at: Date.now(), value: body.enabled };
@@ -2205,7 +2205,7 @@ async function main() {
         res.end(html ?? '脑图页面缺失：qq-bridge/public/brain.html');
         return;
       }
-      if (!feed) { sendJson({ ok: false, error: '实时脑图模块未启用（看 bridge.log）' }, 503); return; }
+      if (!feed) { sendJson({ ok: false, error: '实时脑图模块未启用（看 bridge.log）' }, 503, { safeError: true }); return; }
       const qKey = url.searchParams.get('key');
       if (req.method === 'GET' && p === '/api/brain/events') {
         if (qKey && !BRAIN_KEY_RE.test(qKey)) { sendJson({ ok: false, error: 'key 不合法' }, 400); return; }
@@ -2241,7 +2241,7 @@ async function main() {
           return;
         }
         if (qKey && !BRAIN_KEY_RE.test(qKey)) { sendJson({ ok: false, error: 'key 不合法' }, 400); return; }
-        if (!brainReplay) { sendJson({ ok: false, error: '回放模块未启用（看 bridge.log）' }, 503); return; }
+        if (!brainReplay) { sendJson({ ok: false, error: '回放模块未启用（看 bridge.log）' }, 503, { safeError: true }); return; }
         const r = await brainReplay.replay({ day, key: qKey || undefined });
         if (!r || r.ok === false) { sendJson({ ok: false, error: String(r?.error ?? '回放失败') }, 400); return; }
         log(`[brain] 回放 ${day}：${Array.isArray(r.events) ? r.events.length : 0} 条`);
@@ -2270,7 +2270,7 @@ async function main() {
         if (!m || !BRAIN_KEY_RE.test(key)) { sendJson({ ok: false, error: 'node 应为 chunk:<编号>，key 应为会话 key' }, 400); return; }
         if (!rag || !rag.enabled?.()) { sendJson({ ok: false, error: '向量记忆没有开，取不到话题块原文' }, 404); return; }
         const c = await rag.chunk({ key, chunkId: m[1] });
-        if (!c) { sendJson({ ok: false, error: '向量索引服务不可达' }, 503); return; }
+        if (!c) { sendJson({ ok: false, error: '向量索引服务不可达' }, 503, { safeError: true }); return; }
         if (c.ok === false) { sendJson({ ok: false, error: '找不到这个话题块（可能已删除）' }, 404); return; }
         sendJson({ ok: true, node: `chunk:${c.chunk_id}`, day: c.day, title: c.title, t_start: c.t_start, t_end: c.t_end, text: c.text });
         return;
@@ -2312,7 +2312,7 @@ async function main() {
         return;
       }
       log(`[brain] 接口出错（${error?.code ?? error?.name ?? 'error'}）`);
-      if (!res.headersSent) sendJson({ ok: false, error: '实时脑图接口失败' }, 500);
+      if (!res.headersSent) sendJson({ ok: false, error: '实时脑图接口失败' }, 500, { safeError: true });
     }
   }
 
@@ -4289,12 +4289,13 @@ async function main() {
     if (cfg.dsh?.autoDiscoverPort === false) return false;
     if (Date.now() - lastDshDiscoveryAt < 10000) return false;
     lastDshDiscoveryAt = Date.now();
+    const previous = api.resolveBase();
     let found = await resolveDshEndpoint({ baseUrl: dshWebUrl, target: dshTarget }).catch(() => null);
-    if ((!found || found.baseUrl === api.baseUrl) && dshTarget !== 'web') {
-      const base = await discoverDshBaseUrl({ current: api.baseUrl, log }).catch(() => null);
+    if ((!found || found.baseUrl === previous) && dshTarget !== 'web') {
+      const base = await discoverDshBaseUrl({ current: previous, log }).catch(() => null);
       if (base) found = { baseUrl: base, kind: 'desktop', profile: 'desktop' };
     }
-    if (!found || found.baseUrl === api.baseUrl) return false;
+    if (!found || found.baseUrl === previous) return false;
     api.rebind(found.baseUrl);
     dshLive.url = found.baseUrl;
     dshEndpoint = found;
@@ -4893,7 +4894,7 @@ async function main() {
         // ── PERSONA_PATCH：人格与情绪管理接口（仅控制台；AI 的工具调用一律拒绝，她改不了自己的数值） ──
         if (url.pathname.startsWith('/api/persona/')) {
           if (req.headers['x-agent-call'] !== undefined || req.headers['x-agent-token'] !== undefined) { sendJson({ ok: false, error: '人格接口只对控制台开放' }, 403); return; }
-          if (!persona) { sendJson({ ok: false, error: '人格与情绪模块未启用（看 bridge.log）' }, 503); return; }
+          if (!persona) { sendJson({ ok: false, error: '人格与情绪模块未启用（看 bridge.log）' }, 503, { safeError: true }); return; }
           try {
             const pc = persona.console;
             if (req.method === 'GET') {
@@ -4941,7 +4942,7 @@ async function main() {
             sendJson({ ok: false, error: '该接口只对控制台开放' }, 403);
             return;
           }
-          if (!apiHub || !ragControl) { sendJson({ ok: false, error: 'API 管理模块未启用（看 bridge.log）' }, 503); return; }
+          if (!apiHub || !ragControl) { sendJson({ ok: false, error: 'API 管理模块未启用（看 bridge.log）' }, 503, { safeError: true }); return; }
           try {
             if (req.method === 'GET' && url.pathname === '/api/apis') {
               const r = await apiHub.summary();
@@ -4964,7 +4965,7 @@ async function main() {
                 if (error?.code === 'busy') { sendJson({ ok: false, busy: true, error: '正在启停向量记忆，请稍候' }, 409); return; }
                 // 写 config.json 失败：内存开关不变，页面提示（规格 §11）。
                 log(`[rag] 开关保存失败（${error?.code ?? 'error'}）`);
-                sendJson({ ok: false, error: '写 config.json 失败，开关没有改变' }, 500);
+                sendJson({ ok: false, error: '写 config.json 失败，开关没有改变' }, 500, { safeError: true });
               }
               return;
             }
@@ -4984,7 +4985,7 @@ async function main() {
           } catch (error) {
             // 不回显栈或原文（可能带本机路径）；密钥错误已由各方法转成 4xx。
             log(`[api-hub] 接口出错（${error?.code ?? 'error'}）`);
-            sendJson({ ok: false, error: 'API 管理接口失败' }, 500);
+            sendJson({ ok: false, error: 'API 管理接口失败' }, 500, { safeError: true });
           }
           return;
         }
@@ -5035,7 +5036,7 @@ async function main() {
             // 候选原文从 memory-rag 现取，状态与次数合并状态文件；memory-rag 不可达时
             // 回 rag:false、items:[]，计数按状态文件给（控制台照样能看状态）。
             if (req.method === 'GET' && url.pathname === '/api/ltm/suggest') {
-              if (!ledgerSuggest) { sendJson({ ok: false, error: '账本建议模块没有启用' }, 503); return; }
+              if (!ledgerSuggest) { sendJson({ ok: false, error: '账本建议模块没有启用' }, 503, { safeError: true }); return; }
               const rawDays = String(url.searchParams.get('days') ?? '').trim();
               const days = rawDays === '' ? 7 : Number(rawDays);
               if (!Number.isInteger(days) || days < 1 || days > 30) {
@@ -5044,7 +5045,7 @@ async function main() {
               }
               // 显示名复用报表的 labels（私聊用账本名字、群用群号），拿不到就用 key。
               const body = await ledgerSuggest.list({ days, labelFor: (k) => reportLabels([k])[k] ?? k });
-              if (!body) { sendJson({ ok: false, error: '账本建议统计失败' }, 500); return; }
+              if (!body) { sendJson({ ok: false, error: '账本建议统计失败' }, 500, { safeError: true }); return; }
               sendJson(body);
               return;
             }
@@ -5111,9 +5112,9 @@ async function main() {
             // ── SUGGEST_PATCH：手动作废一条候选（仅控制台；接口约定 contract §2）──
             // 先向 memory-rag 核对这条确实属于这个会话；404 / 409 / 503 原样回给页面。
             if (url.pathname === '/api/ltm/suggest/dismiss') {
-              if (!ledgerSuggest) { sendJson({ ok: false, error: '账本建议模块没有启用' }, 503); return; }
+              if (!ledgerSuggest) { sendJson({ ok: false, error: '账本建议模块没有启用' }, 503, { safeError: true }); return; }
               const r = await ledgerSuggest.dismiss({ id: body.id, key: body.key });
-              if (!r) { sendJson({ ok: false, error: '作废失败' }, 500); return; }
+              if (!r) { sendJson({ ok: false, error: '作废失败' }, 500, { safeError: true }); return; }
               sendJson(r.body, r.code);
               return;
             }
@@ -5140,7 +5141,7 @@ async function main() {
             }
             // ── DECAY_PATCH：手动「唤醒」一条已淡忘的记忆（控制台；1 小时内重复唤醒不算） ──
             if (url.pathname === '/api/ltm/review') {
-              if (!decay) { sendJson({ ok: false, error: '遗忘模块没有启用' }, 503); return; }
+              if (!decay) { sendJson({ ok: false, error: '遗忘模块没有启用' }, 503, { safeError: true }); return; }
               const uid = String(body.userId ?? '').trim();
               const itemId = String(body.itemId ?? '').trim();
               const it = (ltm.personView(uid)?.items ?? []).find((x) => x.id === itemId);
@@ -5208,9 +5209,9 @@ async function main() {
             // ── RAG_PATCH（P3）：重试提炼失败的摘要（转发 memory-rag 的 POST /distill/retry） ──
             if (url.pathname === '/api/ltm/rag/distill-retry') {
               if (ragControl && ragControl.enabled() !== true) { sendJson({ ok: false, off: true, error: 'RAG 已关闭' }, 409); return; }
-              if (!rag) { sendJson({ ok: false, error: '向量索引没有配置' }, 503); return; }
+              if (!rag) { sendJson({ ok: false, error: '向量索引没有配置' }, 503, { safeError: true }); return; }
               const r = await rag.distillRetry();
-              if (!r) { sendJson({ ok: false, error: '向量索引服务不可达' }, 503); return; }
+              if (!r) { sendJson({ ok: false, error: '向量索引服务不可达' }, 503, { safeError: true }); return; }
               if (!r.ok) { sendJson({ ok: false, error: `重试失败（HTTP ${r.status}）` }, r.status); return; }
               const retried = Number(r.data?.retried);
               sendJson({ ok: true, retried: Number.isFinite(retried) ? retried : 0 });
@@ -5219,18 +5220,18 @@ async function main() {
             // ── RAG_PATCH（P2）：手动增量索引 / 全量重建（状态码原样透传） ──
             if (url.pathname === '/api/ltm/rag/index') {
               if (ragControl && ragControl.enabled() !== true) { sendJson({ ok: false, off: true, error: 'RAG 已关闭' }, 409); return; }
-              if (!rag) { sendJson({ ok: false, error: '向量索引没有配置' }, 503); return; }
+              if (!rag) { sendJson({ ok: false, error: '向量索引没有配置' }, 503, { safeError: true }); return; }
               const r = await rag.indexRun();
-              if (!r) { sendJson({ ok: false, error: '向量索引服务不可达' }, 503); return; }
+              if (!r) { sendJson({ ok: false, error: '向量索引服务不可达' }, 503, { safeError: true }); return; }
               if (!r.ok) { sendJson({ ok: false, error: r.data?.detail || `向量索引服务返回 ${r.status}` }, r.status); return; }
               sendJson({ ok: true, result: r.data });
               return;
             }
             if (url.pathname === '/api/ltm/rag/rebuild') {
               if (ragControl && ragControl.enabled() !== true) { sendJson({ ok: false, off: true, error: 'RAG 已关闭' }, 409); return; }
-              if (!rag) { sendJson({ ok: false, error: '向量索引没有配置' }, 503); return; }
+              if (!rag) { sendJson({ ok: false, error: '向量索引没有配置' }, 503, { safeError: true }); return; }
               const r = await rag.rebuild();
-              if (!r) { sendJson({ ok: false, error: '向量索引服务不可达' }, 503); return; }
+              if (!r) { sendJson({ ok: false, error: '向量索引服务不可达' }, 503, { safeError: true }); return; }
               if (!r.ok) { sendJson({ ok: false, error: r.data?.detail || `向量索引服务返回 ${r.status}` }, r.status); return; }
               sendJson({ ok: true, job: r.data?.job ?? null });
               return;
@@ -5276,7 +5277,7 @@ async function main() {
             sendJson({ ok: false, error: '报表接口只对控制台开放' }, 403);
             return;
           }
-          if (!dailyReport) { sendJson({ ok: false, error: '每日报表模块没有启动' }, 503); return; }
+          if (!dailyReport) { sendJson({ ok: false, error: '每日报表模块没有启动' }, 503, { safeError: true }); return; }
           if (req.method !== 'GET') { sendJson({ ok: false, error: '不支持的方法' }, 405); return; }
           try {
             if (url.pathname === '/api/report/daily') {
@@ -5320,7 +5321,7 @@ async function main() {
           } catch (error) {
             // 不回显栈或原文：错误信息里可能带本机路径。
             log(`[report] 接口出错（${error?.code ?? 'error'}）`);
-            sendJson({ ok: false, error: '每日报表统计失败' }, 500);
+            sendJson({ ok: false, error: '每日报表统计失败' }, 500, { safeError: true });
           }
           return;
         }
@@ -8945,7 +8946,7 @@ async function main() {
             }
             const payload = response && typeof response === 'object' && response.data !== undefined ? response.data : response;
             const raw = Array.isArray(payload) ? payload : (Array.isArray(payload?.data) ? payload.data : null);
-            if (!raw) { sendJson({ ok: false, error: '网关返回的成员列表格式异常，已拒绝' }, 502); return; }
+            if (!raw) { sendJson({ ok: false, error: '网关返回的成员列表格式异常，已拒绝' }, 502, { safeError: true }); return; }
             const members = raw.slice(0, limit).map((m) => ({
               userId: m?.user_id != null ? String(m.user_id) : '',
               nickname: truncateText(String(m?.nickname ?? ''), 40),

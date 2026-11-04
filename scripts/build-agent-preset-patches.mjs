@@ -205,7 +205,7 @@ export function buildPatches({ check = false, log = () => {}, root = REPO_ROOT }
 }
 
 // 直接执行时：默认生成，--check 只校验。
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && fs.realpathSync(path.resolve(process.argv[1])) === fs.realpathSync(fileURLToPath(import.meta.url))) {
   const check = process.argv.includes('--check');
   const results = buildPatches({ check, log: (line) => console.log(`[preset-patches] ${line}`) });
   const stale = results.filter((r) => r.changed);

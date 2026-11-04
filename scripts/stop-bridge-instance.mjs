@@ -32,8 +32,11 @@ function nodeScript(commandLine) {
   return tokens.slice(1).find((token) => !token.startsWith('-')) ?? '';
 }
 
+// 这个脚本只为 restart.bat 服务，判断的都是 Windows 路径：固定用 path.win32，在 Linux CI 上也能测。
+const winPath = path.win32;
+
 function samePath(left, right) {
-  return path.resolve(left).toLowerCase() === path.resolve(right).toLowerCase();
+  return winPath.resolve(left).toLowerCase() === winPath.resolve(right).toLowerCase();
 }
 
 /** 命令行里是否真的以 bridge.js 作为 node 的脚本入口（排除把 bridge.js 当参数/数据的情况）。 */
@@ -46,8 +49,8 @@ export function isBridgeProcess(proc, root = DEFAULT_ROOT) {
   const name = String(proc.name ?? '').toLowerCase();
   if (name !== 'node.exe' && name !== 'node') return false;
   const script = nodeScript(proc.commandLine);
-  if (!/(^|[\\/])bridge\.js$/i.test(script) || !path.isAbsolute(script)) return false;
-  return samePath(script, path.join(root, 'src', 'bridge.js'));
+  if (!/(^|[\\/])bridge\.js$/i.test(script) || !winPath.isAbsolute(script)) return false;
+  return samePath(script, winPath.join(root, 'src', 'bridge.js'));
 }
 
 /** 守护窗口：cmd.exe 跑着 start.bat；传入 root 时还必须是本项目的绝对路径启动器。 */
@@ -58,8 +61,8 @@ export function isGuardProcess(proc, root) {
   const cmd = String(proc.commandLine ?? '');
   if (/restart\.bat/i.test(cmd)) return false;
   const script = commandTokens(cmd).find((token) => /(^|[\\/])start\.bat$/i.test(token));
-  if (!script || (root && !path.isAbsolute(script))) return false;
-  return !root || samePath(script, path.join(root, 'start.bat'));
+  if (!script || (root && !winPath.isAbsolute(script))) return false;
+  return !root || samePath(script, winPath.join(root, 'start.bat'));
 }
 
 /**

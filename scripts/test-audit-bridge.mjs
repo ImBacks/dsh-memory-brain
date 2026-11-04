@@ -170,7 +170,7 @@ await test('malformed HTTP request targets return 400 without hanging', async (h
 
     // 1) AI 只能按语音库名字取文件
     const okPath = h.resolveVoicePathForV2('hello');
-    assert.equal(okPath.path, path.join(audioDir, 'hello.mp3'), 'AI 省略扩展名也能命中语音库文件');
+    assert.equal(okPath.path, path.join(fs.realpathSync(audioDir), 'hello.mp3'), 'AI 省略扩展名也能命中语音库文件');
 
     // 2) 绝对路径默认被拒（防 prompt injection 拿任意本地文件外发）
     assert.throws(() => h.resolveVoicePathForV2(outside), /语音库|绝对路径/, 'AI 传库外绝对路径被拒');

@@ -13,6 +13,12 @@ import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+// 假世界用的是 sh 替身、/tmp、/dev/null，只在 Linux / macOS 上有意义；Windows 的升级流程见 test-update-cross.mjs。
+if (process.platform === 'win32') {
+  console.log('SKIP test-update：假世界依赖 sh 替身；Windows 见 test-update-cross.mjs');
+  process.exit(0);
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEV = path.resolve(__dirname, '..');
 const BASE = '/tmp/worker-U/update';
@@ -150,11 +156,14 @@ function writeFiles(dir, files) {
 }
 const devFile = (rel) => fs.readFileSync(path.join(DEV, rel), 'utf8');
 function tooling({ marker = false } = {}) {
-  let update = devFile('scripts/update.sh');
-  if (marker) update = update.replace('set -euo pipefail\n', `set -euo pipefail\necho "${MARKER}"\n`);
+  let update = devFile('scripts/update.mjs');
+  if (marker) update = update.replace('#!/usr/bin/env node\n', `#!/usr/bin/env node\nconsole.log('${MARKER}');\n`);
   return {
-    'scripts/update.sh': update,
+    'scripts/update.sh': devFile('scripts/update.sh'),
+    'scripts/update.mjs': update,
     'scripts/rollback.sh': devFile('scripts/rollback.sh'),
+    'scripts/rollback.mjs': devFile('scripts/rollback.mjs'),
+    'scripts/lib/upgrade-common.mjs': devFile('scripts/lib/upgrade-common.mjs'),
     'scripts/migrate.mjs': devFile('scripts/migrate.mjs'),
     'scripts/lib/upgrade-notes.mjs': devFile('scripts/lib/upgrade-notes.mjs'),
   };
@@ -577,12 +586,12 @@ await test('9. QQB_UPDATE_TEST=1 但仓库不在 /tmp/ 下 → 退出 1（两个
   assert.deepEqual(w.calls(), []);
 });
 
-await test('10. 自复制：运行中 scripts/update.sh 被拉取覆盖（目标版本内容不同）也能跑完', async () => {
+await test('10. 运行中 scripts/update.mjs 被拉取覆盖（目标版本内容不同）也能跑完', async () => {
   const w = world('selfcopy');
   const r = await update(w, ['--yes']);
   assert.equal(r.code, 0, r.out);
-  assert.ok(read(w, 'scripts/update.sh').includes(MARKER), '仓库里的 update.sh 已换成目标版本');
-  assert.ok(!r.out.includes(MARKER), '这次执行的仍是升级前那份（复制到临时目录的）');
+  assert.ok(read(w, 'scripts/update.mjs').includes(MARKER), '仓库里的 update.mjs 已换成目标版本');
+  assert.ok(!r.out.includes(MARKER), '这次执行的仍是升级前那份（ESM 启动时已经读进内存）');
   assert.match(r.out, /升级完成/);
   assertNoSelfCopyLeft(w);
 });

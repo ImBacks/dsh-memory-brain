@@ -241,7 +241,7 @@ async function planFirstRun(repo, opts, git) {
       continue;
     }
     // U5：按 README 先 `git checkout origin/main -- scripts/update.sh` 取到的新脚本（已暂存、与目标版本相同）不算改动。
-    if (rel === 'scripts/update.sh' && opts.target && xy[1] === ' ') {
+    if (['scripts/update.sh', 'scripts/update.mjs', 'scripts/lib/upgrade-common.mjs'].includes(rel) && opts.target && xy[1] === ' ') {
       const idx = git.tryRun(['rev-parse', `:${rel}`])?.trim();
       const tgt = git.tryRun(['rev-parse', `${opts.target}:${rel}`])?.trim();
       if (idx && tgt && idx === tgt && fileHashOf(git, rel) === tgt) {
@@ -628,6 +628,6 @@ export async function main(argv = process.argv.slice(2)) {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && fs.realpathSync(path.resolve(process.argv[1])) === fs.realpathSync(fileURLToPath(import.meta.url))) {
   main().then((code) => { process.exitCode = code; });
 }
