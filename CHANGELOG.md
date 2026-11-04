@@ -4,11 +4,9 @@
 
 ## 第一次升级
 
-Windows（`windows-native` 分支）和其它情况的命令见 [README](README.md#-升级到新版本)。
+**v0.5.1 及更早的版本都要先跑一次**（2026-11-04 整理过一次提交历史，文件内容没变、提交号变了，旧的升级脚本会报「连不上 origin」）。Windows 和其它情况的命令见 [README](README.md#-升级到新版本)。
 
-还没有 `scripts/update.sh` 的 Linux 老版本（v0.3.0 及更早）
-
-在项目目录里执行这两条命令：
+Linux 在项目目录里执行这两条命令：
 
 ```bash
 git fetch origin && git checkout origin/main -- scripts/update.sh scripts/update.mjs scripts/lib/upgrade-common.mjs
@@ -16,6 +14,22 @@ bash scripts/update.sh
 ```
 
 以后升级只要 `bash scripts/update.sh`。
+
+## v0.5.2 — 2026-11-04
+
+修一键启动在 ssh、cron 里选错 node 的问题，并整理了提交历史。**老用户要先跑一次上面「第一次升级」的命令**。升级脚本会重启桥接，QQ、SnowLuma、DSH 不用动。
+
+- **提交历史整理过一次**：2026-10-31 之后的提交号都变了，文件内容、日期、标题不变，`v0.3.0`～`v0.5.1` 的标签已指向新提交，只保留 `main` 分支。升级脚本能认出内容相同的老版本，自动换到新历史。
+  - 本地有自己的提交时脚本会拒绝升级：先用 `git format-patch` 或另开分支把提交存好，`git fetch origin && git reset --hard origin/main`，再放回来。
+  - 自己 fork 的仓库要同步的话，需要强制更新。
+- **`start-all` 在 ssh 命令、cron 里选对 node**：这类非交互 shell 不加载 nvm，以前会拿系统 node 去起服务，起到一半才失败。现在自动用 nvm 里版本够、带 `cap_sys_ptrace` 的 node；找不到就在起任何服务之前说清楚。用 `NODE_BIN` 或 `orchestrator.nodeBin` 指定过的不替换，只检查。Windows 不受影响。
+- `start-all.sh`、`stop-all.sh` 在 PATH 里没有 node 时先去 nvm 目录找，都没有就给明确报错。
+- `scripts/systemd/install.sh` 不再写死 node 版本，默认取 nvm 里最新的。
+
+```upgrade
+restart: bridge
+cost: none
+```
 
 ## v0.5.1 — 2026-11-04
 

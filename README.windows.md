@@ -150,10 +150,10 @@ start-all.bat --rag
 2. 打开 `cmd`，`cd` 到项目目录，手动运行 `start-all.bat`，把输出发出来；
 3. 看 `%USERPROFILE%\.ai-companion-run\start-all.log`，这份日志每次运行都会写。
 
-老的 `windows-native` 分支已经合进 `main`。之前从那个分支 clone 的，运行一次：
+老的 `windows-native` 分支已经合进 `main` 并删除。之前从那个分支 clone 的，运行一次：
 
 ```bat
 git fetch origin
-git switch main
+git switch -C main origin/main
 start-all.bat
 ```

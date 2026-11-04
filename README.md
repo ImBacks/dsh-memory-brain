@@ -352,7 +352,7 @@ macOS 不做原生适配（SnowLuma 也没有 macOS 版）。请用 Docker 起�
 
 升级脚本会先备份 `state/` 和 `config.json`（聊天记录、记忆、配置都不会丢），把你改过的角色卡和提示词挪进 `state/` 覆盖层，再快进到新版本、补装依赖。它只会重启本项目、记忆服务和 DSH 中需要重启的那几个，**永远不会动 QQ 和 SnowLuma**。升级失败时会打印回滚命令。每个版本改了什么见 [CHANGELOG.md](CHANGELOG.md)。
 
-**已经是 v0.5.0 及以后：**
+**已经是 v0.5.2 及以后：**
 
 ```bash
 bash scripts/update.sh --check   # Linux：先看看有什么新版本、要重启什么
@@ -364,39 +364,34 @@ update.bat --check
 update.bat
 ```
 
-### 老用户第一次升到 v0.5.0
+### v0.5.1 及更早的老用户：先跑一次
 
-在项目目录里执行，按你现在的情况选一条：
+2026-11-04 仓库整理过一次提交历史（文件内容没变，提交号变了），旧的升级脚本跟不上，会报「连不上 origin」。在项目目录里执行，只需要这一次：
 
-**🐧 Linux，v0.3.1 或 v0.4.0**（已经有升级脚本）：
-
-```bash
-bash scripts/update.sh
-```
-
-**🐧 Linux，v0.3.0 或更早**（还没有升级脚本，先取下来）：
+**🐧 Linux：**
 
 ```bash
 git fetch origin && git checkout origin/main -- scripts/update.sh scripts/update.mjs scripts/lib/upgrade-common.mjs
 bash scripts/update.sh
 ```
 
-**🪟 Windows，从 `windows-native` 分支 clone 的**（这个分支已经合进 `main`，以后只维护 `main`）：
+**🪟 Windows，git clone 的：**
 
 ```bat
-git fetch origin --tags
-git checkout origin/main -- scripts/update.mjs scripts/lib/upgrade-common.mjs
+git fetch origin
+git checkout origin/main -- scripts/update.sh scripts/update.mjs scripts/lib/upgrade-common.mjs
 node scripts/update.mjs
-git switch main
 ```
 
-以后就可以用 `update.bat` 了。
+从 `windows-native` 分支 clone 的（这个分支已经合进 `main` 并删除），跑完再执行一条 `git switch -C main origin/main`。
+
+本地有自己的提交时脚本会拒绝升级，处理办法见 [CHANGELOG](CHANGELOG.md) 的 v0.5.2。以后就可以用 `bash scripts/update.sh` / `update.bat` 了。
 
 **🪟 Windows，下载 ZIP 的**（没有 git，用不了升级脚本）：运行 `stop-all.bat`，把 `state\` 和 `config.json` 复制出来备份；下载新 ZIP 解压到新目录，把这两样放回去，再双击 `start-all.bat`。
 
 **升级之后：**
 
-- **要重启一次 DSH**，新版的预设和安全守卫才会生效。脚本问你时答 `y` 就行；如果它说没找到 DSH，就自己完全退出 DSH（桌面版要在托盘里退出）再打开。
+- **从 v0.4.0 或更早升上来，要重启一次 DSH**，新版的预设和安全守卫才会生效。脚本问你时答 `y` 就行；如果它说没找到 DSH，就自己完全退出 DSH（桌面版要在托盘里退出）再打开。
 - **QQ 和 SnowLuma 不用动**，也不用升级。
 - 想退回去：Linux 运行 `bash scripts/rollback.sh`，Windows 运行 `rollback.bat`。
 - 许可证从这一版起变了（禁止商用），见[致谢与许可](#-致谢与许可)。
