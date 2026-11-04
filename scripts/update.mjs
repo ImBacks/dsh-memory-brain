@@ -91,8 +91,9 @@ async function main() {
     if (!gitOk(ctx, ['remote', 'get-url', 'origin'])) die1('没有 origin 远端（git remote get-url origin 失败）');
     ok(`仓库：${repo}`);
 
-    step(3, '获取更新（git fetch --tags origin）');
-    if (!gitOk(ctx, ['fetch', '--tags', '--quiet', 'origin'])) die1('连不上 origin（git fetch 失败）');
+    step(3, '获取更新（git fetch --tags --force origin）');
+    // --force：2026-11-04 整理过一次提交历史，旧 clone 里的同名标签指向旧提交，不带它 fetch 会拒绝更新并报错。
+    if (!gitOk(ctx, ['fetch', '--tags', '--force', '--quiet', 'origin'])) die1('连不上 origin（git fetch 失败）');
     if (opts.to) {
       S.targetCommit = gitOut(ctx, ['rev-parse', '-q', '--verify', `refs/tags/${opts.to}^{commit}`]);
       if (!S.targetCommit) die1(`找不到标签 ${opts.to}`);
@@ -116,15 +117,28 @@ async function main() {
         return typeof v === 'string' ? `v${v.replace(/^v/, '')}` : '';
       } catch { return ''; }
     };
+    // 整理过历史后，之前装的 HEAD 不在新历史里，提交号全变了但文件没变：目标版本的历史里
+    // 有文件完全相同的提交，就认它是当前版本。版本号按它算（旧提交上已经没有新标签了），
+    // 拉取前把 HEAD 平移过去再正常快进。有自己提交的 HEAD 对不上，仍走下面的报错。
+    const sameContentCommit = () => {
+      const tree = gitOut(ctx, ['rev-parse', 'HEAD^{tree}']);
+      const line = gitOut(ctx, ['log', '--format=%H %T', S.targetCommit]).split(/\r?\n/).find((l) => l.endsWith(` ${tree}`));
+      return line ? line.split(' ')[0] : '';
+    };
+    const onTargetLine = gitOk(ctx, ['merge-base', '--is-ancestor', 'HEAD', S.targetCommit])
+      || gitOk(ctx, ['merge-base', '--is-ancestor', S.targetCommit, 'HEAD']);
+    S.sameContentAs = onTargetLine ? '' : sameContentCommit();
+    const headRef = S.sameContentAs || 'HEAD';
     const shortHead = gitOut(ctx, ['rev-parse', '--short', 'HEAD']);
-    const fromVer = gitOut(ctx, ['describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*', 'HEAD']) || pkgVersion();
-    S.oldLabel = gitOut(ctx, ['describe', '--tags', '--exact-match', '--match', 'v[0-9]*', 'HEAD']) || `${fromVer ? `${fromVer}+` : ''}${shortHead}`;
+    const fromVer = gitOut(ctx, ['describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*', headRef]) || pkgVersion();
+    S.oldLabel = gitOut(ctx, ['describe', '--tags', '--exact-match', '--match', 'v[0-9]*', headRef]) || `${fromVer ? `${fromVer}+` : ''}${shortHead}`;
     const toVer = /^v\d/.test(S.targetLabel) ? S.targetLabel : '';
     info(`当前：${S.oldLabel}（${shortHead}）`);
     info(`目标：${S.targetLabel}（${gitOut(ctx, ['rev-parse', '--short', S.targetCommit])}）`);
     if (S.targetCommit === S.oldCommit) { ok('已是最新'); S.handled = true; throw new Exit(0); }
     if (gitOk(ctx, ['merge-base', '--is-ancestor', S.targetCommit, 'HEAD'])) { ok('当前版本已包含目标版本，不用升级'); S.handled = true; throw new Exit(0); }
-    if (!gitOk(ctx, ['merge-base', '--is-ancestor', 'HEAD', S.targetCommit])) die1('目标版本不是当前版本的后代：本地有自己的提交，没法快进。请先把自己的提交挪到别的分支再升级');
+    if (S.sameContentAs) info('仓库整理过提交历史（文件内容没变）：这次升级会把本地分支换到新历史上');
+    else if (!gitOk(ctx, ['merge-base', '--is-ancestor', 'HEAD', S.targetCommit])) die1('目标版本不是当前版本的后代：本地有自己的提交，没法快进。请先把自己的提交挪到别的分支再升级（2026-11-04 之前装的，见 CHANGELOG 的 v0.5.2）');
 
     step(4, '这次更新的内容与升级须知');
     const T = path.join(work, 't');
@@ -236,6 +250,8 @@ async function main() {
       info(`将快进到 ${S.targetCommit}`);
     } else {
       S.changed = true;
+      // 文件完全相同，只挪 HEAD，工作区和暂存区都不动。
+      if (S.sameContentAs && G(['reset', '--soft', S.sameContentAs], { orig: true }).code !== 0) fail2('把本地分支换到新历史失败');
       if (G(['merge', '--ff-only', '--quiet', S.targetCommit], { orig: true }).code !== 0) fail2('git merge --ff-only 失败');
       S.merged = true;
       ok(`已到 ${S.targetLabel}`);

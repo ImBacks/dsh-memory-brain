@@ -142,6 +142,24 @@ await test('不是终端又没 --yes：当作「否」，退出 3，什么都没
   assert.equal(sha('HEAD'), before);
 });
 
+await test('历史被重写：文件相同的老版本能升上去（--force 拿到新标签，HEAD 平移后快进）', async () => {
+  const oldHead = sha('HEAD');
+  const tree = (ref) => git(author, 'rev-parse', `${ref}^{tree}`).trim();
+  const a = git(author, 'commit-tree', tree('v0.1.0'), '-m', 'v0.1.0 整理后').trim();
+  const b = git(author, 'commit-tree', tree('v0.2.0'), '-p', a, '-m', 'v0.2.0 整理后').trim();
+  git(author, 'update-ref', 'refs/heads/main', b);
+  git(author, 'tag', '-f', 'v0.1.0', a);
+  git(author, 'tag', '-f', 'v0.2.0', b);
+  git(author, 'push', '-q', '--force', 'origin', 'main', '--tags');
+  const r = await script('update', ['--yes']);
+  assert.equal(r.code, 0, r.out);
+  assert.equal(sha('HEAD'), b);
+  assert.notEqual(oldHead, b);
+  const uj = JSON.parse(fs.readFileSync(path.join(user, 'state', 'upgrade.json'), 'utf8'));
+  assert.equal(uj.history.at(-1).from, 'v0.1.0');
+  assert.equal(uj.history.at(-1).fromCommit, oldHead);
+});
+
 server.close();
 try { fs.rmSync(base, { recursive: true, force: true }); } catch { /* Windows 上可能有句柄没释放，不影响结论 */ }
 console.log(failed ? `FAILED ${failed}` : 'OK');

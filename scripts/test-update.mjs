@@ -803,6 +803,98 @@ await test('R2-10. rollback.sh：记录里的备份已被清理 / 指定的备�
   assert.deepEqual(w.calls().filter((c) => !['pgrep', 'ps'].includes(c.cmd)), []);
 });
 
+// 作者端把历史换成「文件相同、提交号不同」的一份（2026-11-04 那次的样子），标签一起强推。
+function rewriteRemoteHistory(w) {
+  const author = path.join(w.root, 'author');
+  const tree = (ref) => git(author, 'rev-parse', `${ref}^{tree}`).trim();
+  const a = git(author, 'commit-tree', tree('v0.3.0'), '-m', 'v0.3.0 整理后').trim();
+  const b = git(author, 'commit-tree', tree('v0.3.1'), '-p', a, '-m', 'v0.3.1 整理后').trim();
+  git(author, 'update-ref', 'refs/heads/main', b);
+  git(author, 'tag', '-f', 'v0.3.0', a);
+  git(author, 'tag', '-f', 'v0.3.1', b);
+  git(author, 'push', '-q', '--force', 'origin', 'main', '--tags');
+  return { a, b };
+}
+const BOOTSTRAP = ['scripts/update.sh', 'scripts/update.mjs', 'scripts/lib/upgrade-common.mjs'];
+
+await test('R3-1. 历史被重写：文件相同的老版本能升上去，分支换到新历史，版本号算对', async () => {
+  const w = world('rewritten');
+  const oldHead = w.sha('HEAD');
+  const { b } = rewriteRemoteHistory(w);
+  const r = await update(w, ['--yes']);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /整理过提交历史/);
+  assert.equal(w.sha('HEAD'), b);
+  assert.equal(w.sha('main'), b, '留在 main 分支上，不是游离 HEAD');
+  assert.equal(w.sha('v0.3.1'), b, '本地标签也更新了');
+  assert.equal(git(w.user, 'status', '--porcelain').trim(), '');
+  const last = upgradeJson(w).history.at(-1);
+  assert.equal(last.result, 'ok');
+  assert.equal(last.from, 'v0.3.0', '版本号按新历史里对应的提交算');
+  assert.equal(last.fromCommit, oldHead, '回滚要用旧提交');
+  assert.ok(w.calls().some((c) => c.cmd === 'npm'), '依赖有变，后面的步骤照常走');
+  assertSafeCalls(w);
+  assertNoSelfCopyLeft(w);
+});
+
+await test('R3-2. 旧客户端照文档跑一次引导命令：fetch 不报错，暂存的新脚本不算本地改动', async () => {
+  const w = world('rewritten-bootstrap');
+  const { b } = rewriteRemoteHistory(w);
+  assert.throws(() => git(w.user, 'fetch', '-q', '--tags', 'origin'), '不带 --force 的 fetch --tags 会失败：这正是旧脚本报「连不上 origin」的原因');
+  git(w.user, 'fetch', '-q', 'origin');
+  git(w.user, 'checkout', 'origin/main', '--', ...BOOTSTRAP);
+  assert.match(git(w.user, 'status', '--porcelain'), /^M {2}scripts\/update\.mjs/m, '新脚本已暂存');
+  const r = await update(w, ['--yes']);
+  assert.equal(r.code, 0, r.out);
+  assert.ok(r.out.includes(MARKER), '跑的确实是刚取下来的新脚本');
+  assert.ok(r.out.includes('没有本地改动'), r.out);
+  assert.equal(w.sha('HEAD'), b);
+  assert.equal(git(w.user, 'status', '--porcelain').trim(), '');
+});
+
+await test('R3-3. 历史被重写：--check / --dry-run 不动 HEAD 和文件', async () => {
+  const w = world('rewritten-dry');
+  const oldHead = w.sha('HEAD');
+  rewriteRemoteHistory(w);
+  for (const flag of ['--check', '--dry-run']) {
+    const before = treeHash(w.user);
+    const r = await update(w, [flag]);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(w.sha('HEAD'), oldHead, flag);
+    assert.equal(treeHash(w.user), before, flag);
+  }
+});
+
+await test('R3-4. 历史被重写且本地有自己的提交：退出 1，什么都没改，提示看 CHANGELOG', async () => {
+  const w = world('rewritten-diverged');
+  fs.writeFileSync(path.join(w.user, 'local.txt'), '自己的\n');
+  git(w.user, 'add', 'local.txt');
+  git(w.user, 'commit', '-q', '-m', 'local');
+  const head = w.sha('HEAD');
+  rewriteRemoteHistory(w);
+  const before = [treeHash(w.user), treeHash(w.home)].join('\n');
+  const r = await update(w, ['--yes']);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /本地有自己的提交/);
+  assert.match(r.out, /CHANGELOG/);
+  assert.equal(w.sha('HEAD'), head);
+  assert.equal([treeHash(w.user), treeHash(w.home)].join('\n'), before);
+  assert.deepEqual(w.calls(), []);
+});
+
+await test('R3-5. 历史被重写后升级再回滚：回到旧提交，再升一次也能成功', async () => {
+  const w = world('rewritten-rollback');
+  const oldHead = w.sha('HEAD');
+  const { b } = rewriteRemoteHistory(w);
+  assert.equal((await update(w, ['--yes'])).code, 0);
+  const rb = await rollback(w, ['--yes']);
+  assert.equal(rb.code, 0, rb.out);
+  assert.equal(w.sha('HEAD'), oldHead);
+  const again = await update(w, ['--yes']);
+  assert.equal(again.code, 0, again.out);
+  assert.equal(w.sha('HEAD'), b);
+});
+
 await test('附：已是最新 → 退出 0，什么都不做', async () => {
   const w = world('uptodate');
   git(w.user, 'merge', '-q', '--ff-only', 'v0.3.1');
