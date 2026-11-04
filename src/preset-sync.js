@@ -10,10 +10,11 @@ export function resolveInstalledPreset(name, {home, knownPresetName}) {
 }
 
 // A bundle is a rendered patch; copying agent.cordis.yml would corrupt its shape.
-export function synchronizePreset(name, target, {knownPresetName, sourceFor, renderPatch, writeText}) {
+// readSource: the effective agent.cordis.yml (factory + user overlay); sourceFor is the file-path form.
+export function synchronizePreset(name, target, {knownPresetName, sourceFor, readSource, renderPatch, writeText}) {
   if (!knownPresetName(name)) throw new Error('Unknown preset');
   if (!fs.existsSync(target)) return {synced: false, changed: false};
-  const content = target.endsWith('.patch.yml') ? renderPatch(name) : fs.readFileSync(sourceFor(name), 'utf8');
+  const content = target.endsWith('.patch.yml') ? renderPatch(name) : (readSource ? readSource(name) : fs.readFileSync(sourceFor(name), 'utf8'));
   const changed = fs.readFileSync(target, 'utf8') !== content;
   if (changed) writeText(target, content);
   return {synced: true, changed};

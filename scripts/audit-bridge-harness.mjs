@@ -58,9 +58,6 @@ import { createUpdateCheck } from '../src/update-check.js';
 // BRAIN_PATCH：实时脑图的事件总线与回放（bridge.js 顶层 import，同样要注入，坑 12）。
 import { createBrainFeed } from '../src/brain-feed.js';
 import { createBrainReplay } from '../src/brain-replay.js';
-// UPGRADE_PATCH：角色卡统计 / 分节（bridge.js 顶层 import）。以前没注入，/api/roles 系列在 harness 里一调就报
-// 「roleCharStats is not defined」；覆盖层的接口测试要真跑这些路由，所以补上。
-import * as roleCard from '../src/role-card.js';
 
 // 硬性闸门：整个测试进程里禁止默认实现 spawn systemctl（rag-control 的第一行会检查它）。
 process.env.QQB_NO_SYSTEMCTL = '1';

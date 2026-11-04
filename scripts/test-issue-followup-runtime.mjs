@@ -134,6 +134,9 @@ try {
       modelAppliedSessions: new Map(), modelSelectionEpoch: 1,
       cfg: { dsh: { provider: 'fixture-provider', model: 'fixture-model', reasoningEffort: effort } },
       REASONING_EFFORT_DEFAULT: 'max', REASONING_EFFORT_NONE: 'none', unwrap, log() {}, sleep: async () => {},
+      preferredChatModel: async () => ({ provider: 'fixture-provider', model: 'fixture-model' }),
+      catalogDefaultModel: async () => null, catalogRoutableProviders: null, noModelHintLogged: false,
+      modelSetupHint: () => '', dshEndpoint: null,
       api: { sessions: { selectModel: async (payload) => {
         requests.push(payload);
         return selectModel(payload, requests.length);

@@ -490,7 +490,7 @@ function installedPresetYaml(name) {
 
 function syncInstalledPreset(name, target = installedPresetYaml(name)) {
   // root: ROOT —— 生成物要带上覆盖层，且测试 harness 的临时仓库不能去读开发目录。
-  return synchronizePreset(name, target, {knownPresetName, sourceFor: presetSourceYaml, renderPatch: (n) => renderPatch(n, { root: ROOT }), writeText: atomicWriteText});
+  return synchronizePreset(name, target, {knownPresetName, readSource: (n) => effectivePresetYaml(ROOT, n, { log }), renderPatch: (n) => renderPatch(n, { root: ROOT }), writeText: atomicWriteText});
 }
 
 // 这里**没有**模块级的 resolvePresetName —— 曾经有一个，但它被 main() 内部同名函数完全遮蔽
@@ -4285,17 +4285,17 @@ async function main() {
   // 先按进程找桌面版（src/dsh-discovery.js，能拿到 profile 和 kind）；桌面版以后改了命令行，
   // 那条路找不到时再退回只认「能用我们的 Cookie 通过 settings/describe」的端口枚举（src/dsh-endpoint.js）。
   let lastDshDiscoveryAt = 0;
-  async function rediscoverDsh() {
+  async function rediscoverDshBase() {
     if (cfg.dsh?.autoDiscoverPort === false) return false;
     if (Date.now() - lastDshDiscoveryAt < 10000) return false;
     lastDshDiscoveryAt = Date.now();
     let found = await resolveDshEndpoint({ baseUrl: dshWebUrl, target: dshTarget }).catch(() => null);
-    if (!found && dshTarget !== 'web') {
+    if ((!found || found.baseUrl === api.baseUrl) && dshTarget !== 'web') {
       const base = await discoverDshBaseUrl({ current: api.baseUrl, log }).catch(() => null);
       if (base) found = { baseUrl: base, kind: 'desktop', profile: 'desktop' };
     }
     if (!found || found.baseUrl === api.baseUrl) return false;
-    api.setBaseUrl(found.baseUrl);
+    api.rebind(found.baseUrl);
     dshLive.url = found.baseUrl;
     dshEndpoint = found;
     // 换了一个 DSH（dsh web ↔ 桌面版）：模型目录不同，会话模型要重新选，提示也要重新给。
@@ -4312,7 +4312,7 @@ async function main() {
       ok = true;
     } catch {}
     // 配置里的地址探不通时，先试着找出「真正在跑的那个 DSH」，再下不可用的结论。
-    if (!ok && await rediscoverDsh()) {
+    if (!ok && await rediscoverDshBase()) {
       try {
         await api.settings.describe({});
         ok = true;
