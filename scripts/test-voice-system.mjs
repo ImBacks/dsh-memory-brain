@@ -128,7 +128,9 @@ console.log('## qq-bridge 语音系统：路由与开关');
   ok(/shouldBlockSilentReply\(key\)/.test(bridge), 'AI 语音尊重静默模式');
   ok(/allowAbsolutePath/.test(bridge), 'AI 绝对路径受配置约束');
   // 操作者通道不应被 AI 开关挡住（否则默认关闭时你自己也发不了）
-  const opSection = bridge.slice(bridge.indexOf("url.pathname === '/api/voice/send' || url.pathname === '/api/send/voice'"), bridge.indexOf("'/api/socialV2/send-voice'"));
+  // 只切操作者路由本身：它后面紧跟的是 AI 通道（qq_tts_voice 等），那些本来就要受 voice.enabled 限制。
+  const opStart = bridge.indexOf("url.pathname === '/api/voice/send' || url.pathname === '/api/send/voice'");
+  const opSection = bridge.slice(opStart, bridge.indexOf("'/api/socialV2/", opStart));
   ok(!/if \(!voice\.enabled\)/.test(opSection), '操作者通道不被 voice.enabled 挡住（默认关闭时仍可手动试发）');
   const agentStart = bridge.indexOf("url.pathname === '/api/socialV2/send-voice'");
   // 搜索后续路由，避免更早出现的媒体路径白名单让切片变成空字符串。
@@ -145,7 +147,7 @@ console.log('## qq-bridge 语音系统：MCP 工具与开关映射');
   ok(/voice\?\.enabled !== false/.test(mcp), '注册期也检查 voice.enabled（关闭时不注册，省 token）');
   const bridge = read('src/bridge.js');
   ok(/sendVoice: 'qq_send_voice \/ qq_list_voices'/.test(bridge), 'qq_get_prompt 的 toolMap 含语音工具');
-  ok(/'sendVoice'\]/.test(bridge), 'config API 的 toolFlags 含 sendVoice');
+  ok(/const toolFlags = \[[^\]]*'sendVoice'/.test(bridge), 'config API 的 toolFlags 含 sendVoice');
   const ex = JSON.parse(read('config.example.json'));
   // 这一段查的是**「出厂默认就该是关的」**这类契约 —— 权威声明是随仓库发布的
   // config.example.json。**刻意不查用户的 config.json**（早期版本查的是它，两个毛病）：

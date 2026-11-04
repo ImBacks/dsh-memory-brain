@@ -90,3 +90,8 @@ voice-config.json
 # 依赖目录。不带斜杠：发布目录里的 node_modules 可能是指回本机仓库的符号链接，
 # 带斜杠的 node_modules/ 匹配不到符号链接本身。
 node_modules
+
+# macOS 打包带出来的元数据
+._*
+.DS_Store
+__MACOSX/

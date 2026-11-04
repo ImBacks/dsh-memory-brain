@@ -28,6 +28,15 @@ const trackedOnly = args.includes('--tracked-only');
 const withHistory = args.includes('--history');
 const asJson = args.includes('--json');
 
+/**
+ * 右边是属性访问（`apiKey = body.apiKey`、`apiKey = value.trim`）而不是字面量：源码里的赋值，不是凭据。
+ * 真凭据不会是「标识符.标识符」这种形状。比按文件放行窄：同一个文件里写死的密钥照样能扫出来。
+ */
+function rejectPropertyAccessValue(value) {
+  const right = String(value).split(/[:=]/).pop().replace(/^[\s"']+/, '');
+  return /^[A-Za-z_$][A-Za-z_$]*(?:\.[A-Za-z_$][A-Za-z_$]*)+$/.test(right);
+}
+
 // 默认规则：即使没有 privacy-rules.json 也能挡住最常见的一类泄漏。
 const DEFAULT_RULES = {
   comment: '默认规则。请把 privacy-rules.json 加进 .gitignore（它含你的真实 QQ 号/路径），本文件是脱敏模板。',
@@ -41,7 +50,7 @@ const DEFAULT_RULES = {
     // 报它属于纯粹的噪音（会让整个扫描被无视）。所以只报"含非 hex 字符的长串"。
     { name: '疑似令牌/密钥（高熵串）', pattern: '(?<![0-9a-zA-Z])[0-9a-zA-Z_-]{32,}(?![0-9a-zA-Z])', flags: '', requireNonHex: true },
     // 凭据赋值：**空值/占位符不算**（`accessToken: ''` 是模板常态，报它只会制造噪音）。
-    { name: '疑似凭据赋值（有实际值）', pattern: '(?:access[_-]?token|api[_-]?key|password|passwd|secret)["\']?\\s*[:=]\\s*["\']?[A-Za-z0-9_\\-./+=]{12,}', flags: 'i' },
+    { name: '疑似凭据赋值（有实际值）', pattern: '(?:access[_-]?token|api[_-]?key|password|passwd|secret)["\']?\\s*[:=]\\s*["\']?[A-Za-z0-9_\\-./+=]{12,}', flags: 'i', reject: rejectPropertyAccessValue },
     { name: '私钥头', pattern: '-----BEGIN [A-Z ]*PRIVATE KEY-----', flags: '' },
     { name: '带凭据的 URL', pattern: 'https?://[^/\\s:@]+:[^/\\s:@]+@', flags: 'i' },
   ],
@@ -67,6 +76,9 @@ const DEFAULT_RULES = {
     //    今后新增的真实泄漏不会被扫出来。要收紧，正确做法是给扫描器加
     //    「文件 + 规则名」粒度（或让凭据规则只认高熵字面量），而不是继续往这里加文件。
     'docs/guides/PRIVACY.md', 'src/bridge.js', 'src/dsh-client.js',
+    // 逐条核对过的误报：lock 文件的 sha512 校验值；memory-rag 测试里刻意构造的假凭据；
+    // Windows 部署文档和路径探测注释里举例用的 D: / E: 目录。
+    'pnpm-lock.yaml', 'sidecars/memory-rag/tests/', 'docs/guides/WINDOWS_', 'src/runtime/paths.mjs',
   ],
 };
 

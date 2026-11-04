@@ -11,7 +11,7 @@ qq-bridge 会接触本机 OneBot 接入令牌、DSH 会话 Cookie 与控制台�
 
 请用 GitHub 的私密漏洞上报：
 
-> <https://github.com/Derpyu520/qq-bridge/security/advisories/new>
+> <https://github.com/y083245/dsh-memory-brain/security/advisories/new>
 
 在这个页面里写清楚：影响版本、复现步骤、影响面（能读到什么/能做什么）、以及你建议的修法（如果有）。
 不要求你先写好补丁。
@@ -63,7 +63,7 @@ qq-bridge 会接触本机 OneBot 接入令牌、DSH 会话 Cookie 与控制台�
 
 This project handles local OneBot access tokens and DSH session cookies. Please
 report security issues **privately** via
-[GitHub Security Advisories](https://github.com/Derpyu520/qq-bridge/security/advisories/new) —
+[GitHub Security Advisories](https://github.com/y083245/dsh-memory-brain/security/advisories/new) —
 never in a public issue, and never with live tokens or real QQ numbers.
 
 In scope: credential leakage, privilege escalation (confused deputy / auth bypass), SSRF, breaking the
