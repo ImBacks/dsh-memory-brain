@@ -165,7 +165,7 @@ await test('角色卡：改过的进 state/roles、原文件回 HEAD；未跟踪
   assert.deepEqual([...uj.firstRun.moved].sort(), ['hidden:roles/B.md', 'roles/A.md', 'roles/新.md'].sort());
   assert.ok(!r.out.includes('隐私内容'), '输出里不能有文件内容');
   // 原文件备份在 HOME 下
-  assert.ok(uj.firstRun.backup.startsWith(r.home), uj.firstRun.backup);
+  assert.ok(uj.firstRun.backup.startsWith(path.resolve(r.home)), uj.firstRun.backup);
   assert.equal(fs.readFileSync(path.join(uj.firstRun.backup, 'files/roles/A.md'), 'utf8'), '# A\n用户改过的 A（隐私内容）\n');
 });
 

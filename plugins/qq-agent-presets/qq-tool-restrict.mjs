@@ -223,7 +223,7 @@ const KNOWN_DANGEROUS_GLOBAL_TOOLS = [
 ]
 
 // 供 test-preset-local-tools.mjs 导入并与 DSH 真实工具名对账，避免两份名单漂移。
-export const RESTRICTED_TOOL_NAMES = Object.freeze([...KNOWN_DANGEROUS_GLOBAL_TOOLS])
+export const RESTRICTED_TOOL_NAMES = Object.freeze([...new Set([...KNOWN_DANGEROUS_GLOBAL_TOOLS])])
 
 // 执行期白名单：不在这些范围内的工具一律拒绝。
 // 前缀覆盖 DSH MCP client 暴露的命名空间工具。
