@@ -429,7 +429,9 @@ try {
     if (turnSessionId) { try { await api.callUnary('workspace/archiveSession', { sessionId: turnSessionId }); } catch {} }
   }
 } catch (error) {
-  check('DSH 实测段无未捕获异常', false, error?.message ?? String(error));
+  // 没登录账号 / 没填 Key 的 DSH 选不了模型：这是环境，不是适配问题（CI 和全新安装都是这样）。
+  if (/model-unavailable/.test(String(error?.message ?? error))) skip('selectModel 及之后的实测', 'DSH 里没有可用模型（没登录账号 / 没填 API Key）');
+  else check('DSH 实测段无未捕获异常', false, error?.message ?? String(error));
 } finally {
   if (probeSessionId) {
     try { await api.callUnary('session/cancel', { sessionId: probeSessionId }); } catch {}

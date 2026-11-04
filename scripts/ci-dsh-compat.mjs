@@ -79,6 +79,17 @@ function stopHost(child) {
   else { try { process.kill(desktop ? child.pid : -child.pid, 'SIGTERM'); } catch { /* 已经退了 */ } }
 }
 
+// 新版 DSH 加了危险工具而守卫名单没跟上时，这里先红（0.2.2 就加过 schedule_edit / apply_patch）。
+if (!desktop) {
+  const npmRoot = spawnSync(process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : 'npm', process.platform === 'win32' ? ['/d', '/s', '/c', 'npm root -g'] : ['root', '-g'], { encoding: 'utf8' }).stdout.trim();
+  const modules = [path.join(npmRoot, '@deepseek-ai', 'dsh', 'node_modules'), npmRoot].find((dir) => fs.existsSync(path.join(dir, '@deepseek-ai', 'dsh-agent-preset')));
+  const scan = modules ? spawnSync(process.execPath, ['scripts/scan-dsh-tool-names.mjs'], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, DSH_INSTALL_MODULES: modules, QQ_BRIDGE_DSH_MODULES: modules } }) : null;
+  const summary = /候选里未覆盖的危险名 (\d+) 个/.exec(scan?.stdout ?? '');
+  console.log((scan?.stdout ?? '').split(/\r?\n/).filter((l) => /守卫名单|←/.test(l) && !/\[/.test(l)).join('\n'));
+  if (!summary) console.log('::warning::没能扫描 DSH 工具名');
+  else if (summary[1] !== '0') { console.error(`::error::守卫名单漏了 ${summary[1]} 个危险工具名`); process.exit(1); }
+}
+
 const { child, baseUrl } = startHost();
 const deadline = Date.now() + 180000;
 let failed = false;

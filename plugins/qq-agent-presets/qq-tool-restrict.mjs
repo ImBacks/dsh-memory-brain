@@ -150,6 +150,9 @@ const LOCAL_EXECUTION_TOOLS = [
   'plugin_manager',
   //   ④ 无人值守的自我调度
   'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete',
+  // 0.2.2 起 schedule_update / schedule_delete 换成了 schedule_view / schedule_edit，
+  // 而且能管宿主上的**全部**任务，不只是调用方会话的；apply_patch 是写文件。
+  'schedule_view', 'schedule_edit', 'apply_patch',
   // 0.2.1 新增对账（2026-10-22，见上方长注释）：
   //   ① dsh-base 默认启用 ⇒ 全局层继承
   'working_directory',
@@ -179,6 +182,16 @@ const LOCAL_EXECUTION_TOOLS = [
 export const OPTIONAL_BUNDLE_TOOL_NAMES = Object.freeze([
   'subagent_codex',
   'subagent_claude_code',
+  // 第三方 dsh-plugin-guard 的工具：DSH 自己的包里扫不到，但真的进过仿真会话的 schema。
+  'dsh_snapshot',
+  'dsh_rollback',
+  'incident_resolved',
+  // 只在部分 DSH 版本里存在：0.2.1 有 update / delete，0.2.2 起换成 view / edit，并新增 apply_patch。
+  'schedule_update',
+  'schedule_delete',
+  'schedule_view',
+  'schedule_edit',
+  'apply_patch',
 ])
 
 const KNOWN_DANGEROUS_GLOBAL_TOOLS = [
