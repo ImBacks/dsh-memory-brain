@@ -464,5 +464,5 @@ CI 在 Linux、Windows 上跑单元测试和 memory-rag 测试，用真实的 DS
 
 > **合规提醒**：SnowLuma 是独立第三方项目，与腾讯 / QQ 无隶属关系。本项目仅供学习与技术研究，使用前请阅读 SnowLuma 的 EULA 与《QQ 用户协议》，风险自负。
 ## 打赏小弟支持项目，万分感谢🙏🙏🙏，后续还会持续更新添加更多新功能
-<img width="532" height="709" alt="IMG_2137" src="https://github.com/user-attachments/assets/a9c82043-8e98-4ed5-85fd-866cfea10b92" />
+<img width="266" height="354" alt="IMG_2137" src="https://github.com/user-attachments/assets/a9c82043-8e98-4ed5-85fd-866cfea10b92" />
 
